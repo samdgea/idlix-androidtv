@@ -25,9 +25,10 @@ async function main() {
     console.log(`[Server] Idlix Backend API listening on http://${host}:${port}`);
 
     // Pre-warm scraper browser session in the background
-    IdlixScraperEngine.getInstance().init().catch((err) => {
-      console.warn(`[Server] Initial scraper pre-warm notice: ${err?.message}`);
-    });
+    IdlixScraperEngine.getInstance()
+      .init()
+      .then(() => IdlixScraperEngine.getInstance().login())
+      .catch((err) => console.warn(`[Server] Initial scraper pre-warm notice: ${err?.message}`));
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

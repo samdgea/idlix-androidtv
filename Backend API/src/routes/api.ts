@@ -7,10 +7,15 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
 
   // Health and Status
   fastify.get('/health', async () => {
+    const session = engine.getSessionStatus();
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      session: engine.getSessionStatus(),
+      session: {
+        isReady: session.isReady,
+        isLoggedIn: session.isLoggedIn, // Status login
+        targetUrl: session.targetUrl,
+      },
     };
   });
 
@@ -191,7 +196,7 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       if (didMatch?.[1]) {
         didCookie = `did=${didMatch[1]}`;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const result = await engine.executeFetch('/api/watch/session/claim', {
       method: 'POST',
@@ -226,21 +231,23 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
 
   // High-performance All-in-One Playback Resolver
   fastify.get<{
-    Querystring: { contentType?: string; contentId?: string; contentTitle?: string };
+    Querystring: {
+      contentType?: string;
+      contentId?: string;
+      contentTitle?: string;
+      quality?: string;              // ← BARU: "max" | "1080p" | "720p" | ...
+    };
   }>('/api/playback/resolve', async (req, reply) => {
-    const { contentType, contentId, contentTitle } = req.query;
+    const { contentType, contentId, contentTitle, quality } = req.query;
     if (!contentType || !contentId) {
       return reply.status(400).send({ error: 'contentType and contentId are required' });
     }
-
     try {
-      const playback = await engine.resolvePlayback(contentType, contentId, contentTitle);
+      const playback = await engine.resolvePlayback(contentType, contentId, contentTitle, quality);
       return playback;
     } catch (err: any) {
       req.log.error(err, 'Failed to resolve stream playback');
-      return reply.status(500).send({
-        error: err?.message || 'Failed to resolve stream playback',
-      });
+      return reply.status(500).send({ error: err?.message || 'Failed to resolve stream playback' });
     }
   });
 };
