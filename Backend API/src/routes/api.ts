@@ -193,10 +193,13 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       }
     } catch (_) {}
 
+    const incomingCookie = (req.headers.cookie as string) || undefined;
+    const cookieHeader = didCookie || incomingCookie;
+
     const result = await engine.executeFetch('/api/watch/session/claim', {
       method: 'POST',
       body: { gateToken },
-      headers: didCookie ? { Cookie: didCookie } : undefined,
+      headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
     });
 
     return reply.status(result.status).send(result.data);
