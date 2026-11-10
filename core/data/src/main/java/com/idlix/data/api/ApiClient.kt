@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
 
     private const val PREF_KEY_SERVER_URL = "custom_backend_url"
+    private const val PREF_KEY_DEVICE_ID = "device_session_id"
     private const val DEFAULT_URL = BuildConfig.BACKEND_API_URL
 
     @Volatile
@@ -36,10 +37,40 @@ object ApiClient {
     @Volatile
     private var userAgentHeader: String = "Idlix-Client/1.0"
 
+    @Volatile
+    private var cachedDeviceId: String? = null
+
     fun init(context: Context, userAgent: String? = null) {
         this.applicationContext = context.applicationContext
         if (!userAgent.isNullOrBlank()) {
             this.userAgentHeader = userAgent
+        }
+    }
+
+    fun getDeviceId(): String {
+        cachedDeviceId?.let { return it }
+        val prefs = applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
+        val saved = prefs?.getString(PREF_KEY_DEVICE_ID, null)?.trim()
+        if (!saved.isNullOrBlank()) {
+            cachedDeviceId = saved
+            return saved
+        }
+        val generated = java.util.UUID.randomUUID().toString().replace("-", "")
+        cachedDeviceId = generated
+        try {
+            prefs?.edit()?.putString(PREF_KEY_DEVICE_ID, generated)?.apply()
+        } catch (_: Exception) {}
+        return generated
+    }
+
+    fun setDeviceId(newDeviceId: String) {
+        val trimmed = newDeviceId.trim()
+        if (trimmed.isNotBlank()) {
+            cachedDeviceId = trimmed
+            try {
+                val prefs = applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
+                prefs?.edit()?.putString(PREF_KEY_DEVICE_ID, trimmed)?.apply()
+            } catch (_: Exception) {}
         }
     }
 
@@ -133,7 +164,34 @@ object ApiClient {
             builder.header("Origin", hostOrigin)
         }
 
-        chain.proceed(builder.build())
+        // Attach persistent device session cookie (did) for Idlix endpoints
+        val host = originalRequest.url.host
+        val path = originalRequest.url.encodedPath
+        if (host.contains("idlix") || path.contains("/api/watch/") || path.contains("/api/playback/")) {
+            val deviceId = getDeviceId()
+            val existingCookie = originalRequest.header("Cookie")
+            if (existingCookie == null) {
+                builder.header("Cookie", "did=$deviceId")
+            } else if (!existingCookie.contains("did=")) {
+                builder.header("Cookie", "$existingCookie; did=$deviceId")
+            }
+        }
+
+        val response = chain.proceed(builder.build())
+
+        // Synchronize did if server provides a new Set-Cookie: did=...
+        val setCookieHeaders = response.headers("Set-Cookie")
+        for (header in setCookieHeaders) {
+            val match = """did=([a-fA-F0-9]{20,64})""".toRegex().find(header)
+            if (match != null) {
+                val serverDid = match.groupValues[1]
+                if (serverDid.isNotBlank()) {
+                    setDeviceId(serverDid)
+                }
+            }
+        }
+
+        response
     }
 
     const val DNS_PROVIDER_GOOGLE = "google"

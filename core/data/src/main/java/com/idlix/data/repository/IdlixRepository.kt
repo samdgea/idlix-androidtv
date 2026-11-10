@@ -287,8 +287,8 @@ class IdlixRepository(
                 15000L
             }
 
-            // Extract owner device ID from gateToken to construct valid session cookie
-            val didMatch = try {
+            // Resolve session device ID (fallback to ApiClient device ID if gateToken v2 does not expose owner)
+            val didFromToken = try {
                 val rawP0 = playInfo.gateToken.split(".")[0]
                 val decodedBytes = try {
                     java.util.Base64.getUrlDecoder().decode(rawP0)
@@ -300,7 +300,8 @@ class IdlixRepository(
             } catch (e: Exception) {
                 null
             }
-            val didCookie = if (!didMatch.isNullOrBlank()) "did=$didMatch" else null
+            val activeDid = if (!didFromToken.isNullOrBlank()) didFromToken else ApiClient.getDeviceId()
+            val didCookie = "did=$activeDid"
 
             var secondsLeft = (diffMs / 1000).toInt()
             while (secondsLeft > 1) {
