@@ -3,20 +3,32 @@ import { connect } from 'puppeteer-real-browser';
 export interface ResolvedPlaybackResult {
   title: string;
   hlsMasterUrl: string;
+  hlsVariantUrl: string;
+  selectedQuality: string;
+  availableQualities: Array<{
+    name: string;
+    width?: number;
+    height?: number;
+    bandwidth: number;
+    url: string;
+  }>;
   subtitles: Array<{ lang: string; label: string; path: string }>;
   durationSec: number;
   videoId: string;
 }
 
 export class IdlixScraperEngine {
+  private isLoggedIn = false;
   private static instance: IdlixScraperEngine | null = null;
   private browser: any = null;
   private page: any = null;
   private isReady = false;
-  private initPromise: Promise<void> | null = null;
   private baseUrl = process.env.IDLIX_BASE_URL || 'https://z2.idlixku.com';
+  private initPromise: Promise<void> | null = null;
+  private loginPromise: Promise<boolean> | null = null;   // ← hindari login paralel
+  // ← fallback baseUrl (jangan undefined)
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): IdlixScraperEngine {
     if (!IdlixScraperEngine.instance) {
@@ -59,28 +71,34 @@ export class IdlixScraperEngine {
         this.browser = realBrowser.browser;
         this.page = realBrowser.page;
 
-        // Block heavy external ads only, never block challenge resources
-        try {
-          await this.page.setRequestInterception(true);
-          this.page.on('request', (req: any) => {
-            const url = req.url();
-            const adBlock = ['xyzchat', 'doubleclick', 'google-analytics', 'analytics.google.com'];
-
-            if (adBlock.some((d) => url.includes(d))) {
-              req.abort();
-            } else {
-              req.continue();
-            }
-          });
-        } catch (_) {}
-
-        console.log(`[ScraperEngine] Navigating to ${this.baseUrl} to solve Cloudflare challenge...`);
-        await this.page.goto(this.baseUrl, {
-          waitUntil: 'domcontentloaded',
-          timeout: 60000,
+        await this.page.setUserAgent(
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        );
+        // Block media and ad networks to save VPS RAM and CPU
+        await this.page.setRequestInterception(true);
+        this.page.on('request', (req: any) => {
+          const resType = req.resourceType();
+          const url = req.url();
+          const adBlock = ['xyzchat', 'doubleclick', 'google-analytics', 'analytics.google.com'];
+          if (
+            resType === 'image' ||
+            resType === 'media' ||
+            resType === 'font' ||
+            adBlock.some((d) => url.includes(d))
+          ) {
+            req.abort();
+          } else {
+            req.continue();
+          }
         });
 
-        console.log('[ScraperEngine] Waiting for Cloudflare Turnstile verification...');
+        console.log(`[ScraperEngine] Navigating to ${this.baseUrl} to solve challenge...`);
+        await this.page.goto(this.baseUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 45000
+        });
+        // Wait until Cloudflare challenge passes (title does not contain "Just a moment...")
         await this.page.waitForFunction(
           () => {
             const title = document.title.toLowerCase();
@@ -91,8 +109,16 @@ export class IdlixScraperEngine {
 
         console.log(`[ScraperEngine] Cloudflare challenge bypassed successfully! Page Title: "${await this.page.title()}"`);
         this.isReady = true;
+
+        // Auto re-login setelah init (penting jika sebelumnya sudah pernah login)
+        this.isLoggedIn = false;   // reset karena browser baru
+        if (process.env.IDLIX_EMAIL && process.env.IDLIX_PASSWORD) {
+          await this.login().catch((e) =>
+            console.warn(`[ScraperEngine] Auto-login after init failed: ${e?.message}`)
+          );
+        }
       } catch (err: any) {
-        console.error(`[ScraperEngine] Failed to initialize browser session: ${err?.message || err}`);
+        console.error(`[ScraperEngine] Init failed: ${err?.message || err}`);
         this.isReady = false;
         if (this.browser) {
           try {
@@ -110,9 +136,119 @@ export class IdlixScraperEngine {
     return this.initPromise;
   }
 
-  public getSessionStatus(): { isReady: boolean; targetUrl: string } {
+  /**
+   * Login otomatis. Dilindungi loginPromise agar tidak terjadi paralel.
+   */
+  public async login(): Promise<boolean> {
+    if (this.isLoggedIn) return true;
+    if (this.loginPromise) return this.loginPromise;
+
+    this.loginPromise = (async () => {
+      const email = process.env.IDLIX_EMAIL;
+      const password = process.env.IDLIX_PASSWORD;
+
+      if (!email || !password) {
+        console.warn('[ScraperEngine] Kredensial login tidak tersedia.');
+        return false;
+      }
+
+      await this.init();
+      if (!this.page || this.page.isClosed()) return false;
+
+      try {
+        console.log('[ScraperEngine] Mencoba login otomatis...');
+
+        // 1. Gunakan networkidle2 agar React selesai merender navbar/modal
+        await this.page.goto(this.baseUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+
+        // 2. Cek apakah sudah login (misal ada text "Profil" atau "Logout")
+        const alreadyLoggedIn = await this.page.evaluate(() => {
+          return document.body.innerText.toLowerCase().includes('logout') ||
+            document.body.innerText.toLowerCase().includes('profil');
+        });
+        if (alreadyLoggedIn) {
+          console.log('[ScraperEngine] ✅ Sudah dalam keadaan login.');
+          this.isLoggedIn = true;
+          return true;
+        }
+
+        // 3. Cari dan klik tombol Masuk
+        console.log('[ScraperEngine] Mencari tombol Masuk...');
+        const clicked = await this.page.evaluate(() => {
+          const elements = Array.from(document.querySelectorAll('a, button, [role="button"]'));
+          const loginBtn = elements.find(el => {
+            const text = (el.textContent || '').toLowerCase().trim();
+            const href = el.getAttribute('href') || '';
+            return text === 'masuk' || text === 'login' || href.includes('/login');
+          });
+          if (loginBtn) {
+            (loginBtn as HTMLElement).click();
+            return true;
+          }
+          return false;
+        });
+
+        if (!clicked) throw new Error('Tombol "Masuk" tidak ditemukan di Navbar.');
+
+        // 4. Tunggu form modal muncul (menggunakan selektor dari screenshot Anda)
+        console.log('[ScraperEngine] Menunggu form login muncul...');
+        const emailSel = 'input[autocomplete="username"]';
+        const passSel = 'input[type="password"]';
+
+        await this.page.waitForSelector(emailSel, { visible: true, timeout: 15000 });
+
+        // 5. Isi form (Bersihkan dulu dengan evaluate)
+        await this.page.$eval(emailSel, (el: any) => { (el as HTMLInputElement).value = ''; });
+        await this.page.type(emailSel, email, { delay: 50 });
+
+        await this.page.$eval(passSel, (el: any) => { (el as HTMLInputElement).value = ''; });
+        await this.page.type(passSel, password, { delay: 50 });
+
+        // 6. Submit tanpa menunggu navigasi URL (karena ini SPA)
+        console.log('[ScraperEngine] Menekan tombol Submit...');
+        await this.page.click('button[type="submit"]');
+
+        // 7. VERIFIKASI: Tunggu sampai form password hilang dari layar
+        // (Jika modal tertutup, berarti login sukses)
+        console.log('[ScraperEngine] Menunggu verifikasi login...');
+        await this.page.waitForFunction(
+          () => !document.querySelector('input[type="password"]'),
+          { timeout: 15000 }
+        ).catch(() => {
+          throw new Error('Login gagal: Form password masih tampil (Cek email/password).');
+        });
+
+        this.isLoggedIn = true;
+        console.log('[ScraperEngine] ✅ Login berhasil!.');
+        return true;
+      } catch (err: any) {
+        console.error(`[ScraperEngine] ❌ Login gagal: ${err?.message}`);
+        this.isLoggedIn = false;
+        return false;
+      } finally {
+        this.loginPromise = null;
+      }
+    })();
+
+    return this.loginPromise;
+  }
+
+  /**
+   * Pastikan login aktif. Panggil sebelum operasi kritikal (redeem 1080p).
+   */
+  private async ensureLoggedIn(): Promise<void> {
+    if (this.isLoggedIn) return;
+    const ok = await this.login();
+    if (!ok) {
+      console.warn('[ScraperEngine] Lanjut tanpa login — resolusi dibatasi (mungkin max 720p).');
+    }
+  }
+
+  // ← TIPE RETURN DIPERBAIKI
+  public getSessionStatus(): { isReady: boolean; isLoggedIn: boolean; targetUrl: string } {
     return {
       isReady: this.isReady && this.page !== null && !this.page.isClosed(),
+      isLoggedIn: this.isLoggedIn,
       targetUrl: this.baseUrl,
     };
   }
@@ -133,7 +269,9 @@ export class IdlixScraperEngine {
     }
 
     const { method = 'GET', body, headers = {} } = options;
-    const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
     try {
       const result = await this.page.evaluate(
@@ -153,32 +291,15 @@ export class IdlixScraperEngine {
               },
               body: fetchBody ? JSON.stringify(fetchBody) : undefined,
             });
-
             const text = await res.text();
-            let parsedData = null;
-            try {
-              parsedData = JSON.parse(text);
-            } catch (_) {
-              parsedData = text;
-            }
-
-            return {
-              status: res.status,
-              data: parsedData,
-              error: null,
-            };
+            let parsed: any;
+            try { parsed = JSON.parse(text); } catch { parsed = text; }
+            return { status: res.status, data: parsed, error: null };
           } catch (e: any) {
-            return {
-              status: 500,
-              data: null,
-              error: e?.message || 'In-browser fetch error',
-            };
+            return { status: 500, data: null, error: e?.message || 'in-browser fetch error' };
           }
         },
-        url,
-        method,
-        body,
-        headers
+        url, method, body, headers
       );
 
       if (result.error) {
@@ -201,38 +322,85 @@ export class IdlixScraperEngine {
       return { status: result.status, data: result.data };
     } catch (err: any) {
       console.warn(`[ScraperEngine] Request failed for ${url}: ${err?.message}`);
-      // If session might be stale or blocked, trigger re-init in background
       if (err?.message?.includes('Target closed') || err?.message?.includes('Session closed')) {
         this.isReady = false;
         this.page = null;
+        this.isLoggedIn = false;   // ← session mati = login juga hilang
       }
       throw err;
     }
   }
 
-  /**
-   * Resolves complete HLS playback in a single call for high performance
-   */
+  // ============ HLS variant parsing ============
+  private parseMasterPlaylist(text: string, baseUrl: string): ResolvedPlaybackResult['availableQualities'] {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const variants: ResolvedPlaybackResult['availableQualities'] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('#EXT-X-STREAM-INF:')) continue;
+      const attrs = lines[i].substring('#EXT-X-STREAM-INF:'.length);
+      const bw = /BANDWIDTH=(\d+)/.exec(attrs);
+      const res = /RESOLUTION=(\d+)x(\d+)/.exec(attrs);
+      let uri = '';
+      for (let j = i + 1; j < lines.length; j++) {
+        if (!lines[j].startsWith('#')) { uri = lines[j]; break; }
+      }
+      if (!uri) continue;
+
+      const fullUrl = uri.startsWith('http') ? uri : new URL(uri, baseUrl).toString();
+      const height = res ? parseInt(res[2], 10) : 0;
+      const bandwidth = bw ? parseInt(bw[1], 10) : 0;
+
+      variants.push({
+        name: height ? `${height}p` : `${Math.round(bandwidth / 1000)}kbps`,
+        width: res ? parseInt(res[1], 10) : undefined,
+        height: height || undefined,
+        bandwidth,
+        url: fullUrl,
+      });
+    }
+    variants.sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || b.bandwidth - a.bandwidth);
+    return variants;
+  }
+
+  private selectVariant(
+    variants: ResolvedPlaybackResult['availableQualities'],
+    quality?: string
+  ): ResolvedPlaybackResult['availableQualities'][number] | null {
+    if (!variants.length) return null;
+    const q = (quality || 'max').toLowerCase();
+    if (['max', 'best', 'highest', 'auto'].includes(q)) return variants[0];
+
+    const m = /(\d+)/.exec(q);
+    if (!m) return variants[0];
+    const target = parseInt(m[1], 10);
+    return variants.find((v) => v.height === target)
+      ?? variants.find((v) => (v.height ?? 0) >= target)
+      ?? variants[0];
+  }
+
   public async resolvePlayback(
     contentType: string,
     contentId: string,
-    contentTitle?: string
+    contentTitle?: string,
+    quality?: string
   ): Promise<ResolvedPlaybackResult> {
     await this.init();
+    await this.ensureLoggedIn();   // ← pastikan login untuk akses 1080p
 
     let targetType = contentType;
     let targetId = contentId;
 
-    // Handle series: if tv_series is requested, resolve first episode of season 1
     if (contentType === 'tv_series') {
       const seriesRes = await this.executeFetch(`/api/series/${contentId}`);
-      const series = seriesRes.data;
+      const series: any = seriesRes.data;
       const firstEp =
         series?.defaultSeason?.episodes?.[0] ||
         (series?.seasons?.[0]
-          ? (await this.executeFetch(`/api/series/${series.slug}/season/${series.seasons[0].seasonNumber}/episode/1`)).data?.episode
+          ? (await this.executeFetch(
+            `/api/series/${series.slug}/season/${series.seasons[0].seasonNumber}/episode/1`
+          )).data?.episode
           : null);
-
       if (firstEp?.id) {
         targetType = 'episode';
         targetId = firstEp.id;
@@ -241,75 +409,73 @@ export class IdlixScraperEngine {
       }
     }
 
-    // Step 1: Get play-info (gateToken + countdown)
     const playInfoRes = await this.executeFetch(`/api/watch/play-info/${targetType}/${targetId}`);
-    const playInfo = playInfoRes.data;
-    if (!playInfo?.gateToken) {
-      throw new Error('Failed to obtain playback gate token from provider');
-    }
+    const playInfo: any = playInfoRes.data;
+    if (!playInfo?.gateToken) throw new Error('Failed to obtain playback gate token');
 
-    // Extract device ID (did) from gateToken payload
     let didCookie: string | undefined;
     try {
       const rawP0 = playInfo.gateToken.split('.')[0];
       const decodedP0 = Buffer.from(rawP0, 'base64').toString('utf-8');
       const didMatch = /"owner":"d:([^"]+)"/.exec(decodedP0);
-      if (didMatch?.[1]) {
-        didCookie = `did=${didMatch[1]}`;
-      }
-    } catch (_) {}
+      if (didMatch?.[1]) didCookie = `did=${didMatch[1]}`;
+    } catch { }
 
-    // Step 2: Handle unlock countdown
     const serverNow = playInfo.serverNow || Date.now();
     const unlockAt = playInfo.unlockAt || serverNow + 15000;
     const waitMs = Math.max(0, unlockAt - serverNow);
-
     if (waitMs > 0) {
-      console.log(`[ScraperEngine] Synchronizing with provider countdown (${Math.round(waitMs / 1000)}s)...`);
-      await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs + 500, 16000)));
+      console.log(`[ScraperEngine] Waiting countdown (${Math.round(waitMs / 1000)}s)...`);
+      await new Promise((r) => setTimeout(r, Math.min(waitMs + 500, 16000)));
     }
 
-    // Step 3: Claim session
     let claimRes: any = null;
     for (let attempt = 1; attempt <= 10; attempt++) {
       try {
-        const claimResp = await this.executeFetch('/api/watch/session/claim', {
+        const r = await this.executeFetch('/api/watch/session/claim', {
           method: 'POST',
           body: { gateToken: playInfo.gateToken },
           headers: didCookie ? { Cookie: didCookie } : undefined,
         });
-
-        if (claimResp.data?.kind === 'pentos' && claimResp.data?.claim) {
-          claimRes = claimResp.data;
+        if ((r.data as any)?.kind === 'pentos' && (r.data as any)?.claim) {
+          claimRes = r.data;
           break;
         }
-      } catch (_) {}
+      } catch { }
       await new Promise((r) => setTimeout(r, 600));
     }
+    if (!claimRes?.claim) throw new Error('Failed to claim playback session');
 
-    if (!claimRes?.claim) {
-      throw new Error('Failed to claim playback session from provider');
-    }
-
-    // Step 4: Redeem HLS master playlist from Majorplay CDN
     const redeemUrl = claimRes.redeemUrl || 'https://e2e.majorplay.net/api/play';
     const redeemResp = await this.executeFetch(redeemUrl, {
       method: 'POST',
       body: { claim: claimRes.claim, mode: 'browser' },
-      headers: {
-        Referer: `${this.baseUrl}/`,
-        Origin: this.baseUrl,
-      },
+      headers: { Referer: `${this.baseUrl}/`, Origin: this.baseUrl },
     });
+    const redeemData: any = redeemResp.data;
+    if (!redeemData?.url) throw new Error('Failed to redeem HLS master playlist URL');
 
-    const redeemData = redeemResp.data;
-    if (!redeemData?.url) {
-      throw new Error('Failed to redeem HLS master playlist URL');
+    // Parse master playlist → pilih variant sesuai permintaan quality
+    let variants: ResolvedPlaybackResult['availableQualities'] = [];
+    let selectedUrl = redeemData.url;
+    let selectedName = 'auto';
+    try {
+      const masterResp = await this.executeFetch(redeemData.url);
+      if (typeof masterResp.data === 'string' && (masterResp.data as string).includes('#EXTM3U')) {
+        variants = this.parseMasterPlaylist(masterResp.data as string, redeemData.url);
+        const chosen = this.selectVariant(variants, quality);
+        if (chosen) { selectedUrl = chosen.url; selectedName = chosen.name; }
+      }
+    } catch (e: any) {
+      console.warn(`[ScraperEngine] Master parse failed: ${e?.message}`);
     }
 
     return {
       title: claimRes.title || contentTitle || 'Video',
       hlsMasterUrl: redeemData.url,
+      hlsVariantUrl: selectedUrl,
+      selectedQuality: selectedName,
+      availableQualities: variants,
       subtitles: Array.isArray(redeemData.subtitles) ? redeemData.subtitles : [],
       durationSec: claimRes.durationSec || 0,
       videoId: claimRes.videoId || '',
@@ -322,6 +488,7 @@ export class IdlixScraperEngine {
       this.browser = null;
       this.page = null;
       this.isReady = false;
+      this.isLoggedIn = false;   // ← reset
     }
   }
 }
