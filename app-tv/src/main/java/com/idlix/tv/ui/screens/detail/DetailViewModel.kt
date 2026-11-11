@@ -33,8 +33,9 @@ class DetailViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                if (contentType == "tv_series") {
-                    val series = repository.getSeriesDetail(slug)
+                if (contentType == "tv_series" || contentType == "series" || contentType == "episode") {
+                    val rawSeries = repository.getSeriesDetail(slug)
+                    val series = rawSeries?.copy(slug = rawSeries.slug.ifBlank { slug })
                     val defaultSeason = series?.defaultSeason
                     val defaultSeasonNum = defaultSeason?.seasonNumber
                     // Match selected season with defaultSeason, or fallback to first season
@@ -50,7 +51,8 @@ class DetailViewModel(
                         episodes = episodes
                     )
                 } else {
-                    val movie = repository.getMovieDetail(slug)
+                    val rawMovie = repository.getMovieDetail(slug)
+                    val movie = rawMovie?.copy(slug = rawMovie.slug.ifBlank { slug })
                     _uiState.value = DetailUiState(
                         isLoading = false,
                         movie = movie

@@ -33,13 +33,14 @@ fun MobileBottomNavBar(
         containerColor = SurfaceDark,
         tonalElevation = 8.dp
     ) {
+        val baseCurrentRoute = currentRoute?.substringBefore('?')
         BottomNavItem.items.forEach { item ->
-            val isSelected = currentRoute == item.route
+            val isSelected = baseCurrentRoute == item.route
             val itemLabel = stringResource(item.labelRes)
             NavigationBarItem(
                 selected = isSelected,
                 onClick = {
-                    if (currentRoute != item.route) {
+                    if (baseCurrentRoute != item.route) {
                         navController.navigate(item.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true

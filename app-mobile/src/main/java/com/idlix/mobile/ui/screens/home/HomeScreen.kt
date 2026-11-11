@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -27,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -40,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.idlix.data.model.WatchHistoryItem
 import com.idlix.mobile.R
 import com.idlix.mobile.ui.components.ContinueWatchingSection
 import com.idlix.mobile.ui.components.HeroBannerPager
@@ -54,7 +57,12 @@ import com.idlix.mobile.ui.theme.TextWhite
 @Composable
 fun HomeScreen(
     onNavigateToDetail: (contentType: String, slug: String) -> Unit,
+    onContinueWatchingClick: (WatchHistoryItem) -> Unit = { item ->
+        val slug = item.slug?.takeIf { it.isNotBlank() } ?: item.contentId
+        onNavigateToDetail(item.contentType, slug)
+    },
     onNavigateToSettings: () -> Unit,
+    onOpenOfflineDownloads: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -99,6 +107,22 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.size(6.dp))
                         Text(stringResource(R.string.retry))
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenOfflineDownloads
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = TextWhite,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.open_offline_downloads),
+                            color = TextWhite
+                        )
+                    }
                 }
             }
         } else {
@@ -142,7 +166,7 @@ fun HomeScreen(
                 if (uiState.continueWatching.isNotEmpty()) {
                     ContinueWatchingSection(
                         items = uiState.continueWatching,
-                        onItemClick = { contentType, slug -> onNavigateToDetail(contentType, slug) }
+                        onItemClick = { item -> onContinueWatchingClick(item) }
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                 }
@@ -168,14 +192,24 @@ fun HomeScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = { viewModel.loadData() },
-                                colors = ButtonDefaults.buttonColors(containerColor = IdlixRed),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(stringResource(R.string.retry), fontSize = 12.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(
+                                    onClick = { viewModel.loadData() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = IdlixRed),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(stringResource(R.string.retry), fontSize = 12.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = onOpenOfflineDownloads,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Icon(Icons.Filled.Download, contentDescription = null, tint = TextWhite, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(stringResource(R.string.open_offline_downloads), color = TextWhite, fontSize = 12.sp)
+                                }
                             }
                         }
                     }

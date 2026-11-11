@@ -58,7 +58,8 @@ fun MainScaffold(
     }
 
     // Tampilkan BottomBar hanya di top-level bottom nav routes
-    val showBottomBar = BottomNavItem.items.any { it.route == currentRoute }
+    val baseCurrentRoute = currentRoute?.substringBefore('?')
+    val showBottomBar = BottomNavItem.items.any { it.route == baseCurrentRoute }
 
     Scaffold(
         containerColor = BackgroundDark,

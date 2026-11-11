@@ -1,8 +1,13 @@
 package com.idlix.mobile.ui.screens.detail
 
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,6 +38,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -42,8 +53,13 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -72,14 +89,19 @@ import coil.compose.AsyncImage
 import com.idlix.data.model.CastMember
 import com.idlix.data.model.EpisodeItem
 import com.idlix.mobile.R
+import com.idlix.mobile.download.DownloadStatus
+import com.idlix.mobile.download.OfflineDownloadItem
 import com.idlix.mobile.ui.screens.detail.components.MobilePlayerView
 import com.idlix.mobile.ui.screens.detail.components.SubtitleModalBottomSheet
 import com.idlix.mobile.ui.screens.detail.components.findActivity
 import com.idlix.mobile.ui.screens.settings.SubtitlePositionEditorScreen
 import com.idlix.mobile.ui.theme.BackgroundDark
 import com.idlix.mobile.ui.theme.BackgroundElevated
+import com.idlix.mobile.ui.theme.BorderDark
 import com.idlix.mobile.ui.theme.GoldStar
+import com.idlix.mobile.ui.theme.IdlixAccentCyan
 import com.idlix.mobile.ui.theme.IdlixRed
+import com.idlix.mobile.ui.theme.SurfaceDark
 import com.idlix.mobile.ui.theme.TextMuted
 import com.idlix.mobile.ui.theme.TextSecondary
 import com.idlix.mobile.ui.theme.TextWhite
@@ -90,6 +112,10 @@ fun DetailScreen(
     slug: String,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    autoPlay: Boolean = false,
+    resumeContentId: String? = null,
+    resumeSeasonNumber: Int? = null,
+    resumeEpisodeNumber: Int? = null,
     viewModel: DetailViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -98,12 +124,36 @@ fun DetailScreen(
     var isOverviewExpanded by remember { mutableStateOf(false) }
     var isBookmarked by rememberSaveable { mutableStateOf(false) }
     var isEditingPosition by remember { mutableStateOf(false) }
+    var selectedDownloadSheetContentId by remember { mutableStateOf<String?>(null) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     val activity = remember(context) { context.findActivity() }
 
     // Load media detail
-    LaunchedEffect(contentType, slug) {
-        viewModel.loadDetail(contentType, slug)
+    LaunchedEffect(contentType, slug, resumeContentId) {
+        viewModel.loadDetail(
+            contentType = contentType,
+            slug = slug,
+            autoPlay = autoPlay,
+            resumeContentId = resumeContentId,
+            resumeSeasonNumber = resumeSeasonNumber,
+            resumeEpisodeNumber = resumeEpisodeNumber
+        )
     }
 
     // Handle orientation & system bars for Fullscreen Mode
@@ -378,22 +428,174 @@ fun DetailScreen(
                             Spacer(modifier = Modifier.height(14.dp))
                         }
 
-                        // Actions Row (Watchlist, Share)
+                        // Actions Row (Download Offline, Watchlist, Share)
                         item {
+                            val activeTargetId = if (uiState.series != null) {
+                                (uiState.playingEpisode ?: uiState.selectedEpisode ?: uiState.episodes.firstOrNull())?.id
+                            } else {
+                                uiState.movie?.id
+                            }
+                            val activeDownloadItem = activeTargetId?.let { uiState.downloadsByContentId[it] }
+
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
+                                // Offline Download Action Button (Mobile Only)
+                                Surface(
+                                    color = if (activeDownloadItem?.status == DownloadStatus.COMPLETED) {
+                                        IdlixAccentCyan.copy(alpha = 0.14f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.08f)
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = if (activeDownloadItem?.status == DownloadStatus.COMPLETED) {
+                                        BorderStroke(1.dp, IdlixAccentCyan.copy(alpha = 0.45f))
+                                    } else null,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 44.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            if (activeDownloadItem != null) {
+                                                selectedDownloadSheetContentId = activeDownloadItem.contentId
+                                            } else {
+                                                ensureNotificationPermission()
+                                                if (uiState.movie != null) {
+                                                    viewModel.downloadMovie(uiState.movie!!)
+                                                } else if (uiState.series != null) {
+                                                    val ep = uiState.playingEpisode
+                                                        ?: uiState.selectedEpisode
+                                                        ?: uiState.episodes.firstOrNull()
+                                                    if (ep != null) {
+                                                        viewModel.downloadEpisode(ep)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        when (activeDownloadItem?.status) {
+                                            DownloadStatus.QUEUED,
+                                            DownloadStatus.RESOLVING -> {
+                                                CircularProgressIndicator(
+                                                    color = IdlixRed,
+                                                    strokeWidth = 2.dp,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "${activeDownloadItem.progressPercent}%",
+                                                    color = TextWhite,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                            DownloadStatus.DOWNLOADING -> {
+                                                CircularProgressIndicator(
+                                                    progress = { (activeDownloadItem.progressPercent / 100f).coerceIn(0.05f, 1f) },
+                                                    color = IdlixRed,
+                                                    trackColor = Color.White.copy(alpha = 0.2f),
+                                                    strokeWidth = 2.dp,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "${activeDownloadItem.progressPercent}%",
+                                                    color = TextWhite,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                            DownloadStatus.PAUSED -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.Pause,
+                                                    contentDescription = null,
+                                                    tint = GoldStar,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = stringResource(R.string.download_paused_label, activeDownloadItem.progressPercent),
+                                                    color = GoldStar,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            DownloadStatus.COMPLETED -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.DownloadDone,
+                                                    contentDescription = null,
+                                                    tint = IdlixAccentCyan,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = stringResource(R.string.download_downloaded),
+                                                    color = TextWhite,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            DownloadStatus.FAILED -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.ErrorOutline,
+                                                    contentDescription = null,
+                                                    tint = IdlixRed,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = stringResource(R.string.download_failed_retry),
+                                                    color = IdlixRed,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            null -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.Download,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = stringResource(R.string.download_action),
+                                                    color = TextWhite,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Surface(
                                     color = Color.White.copy(alpha = 0.08f),
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier
                                         .weight(1f)
+                                        .heightIn(min = 44.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .clickable { isBookmarked = !isBookmarked }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -403,12 +605,14 @@ fun DetailScreen(
                                             tint = if (isBookmarked) IdlixRed else Color.White,
                                             modifier = Modifier.size(18.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = if (isBookmarked) stringResource(R.string.in_my_list) else stringResource(R.string.my_list),
                                             color = TextWhite,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -418,10 +622,15 @@ fun DetailScreen(
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier
                                         .weight(1f)
+                                        .heightIn(min = 44.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .clickable {
                                             val shareTitle = context.getString(R.string.share)
-                                            val shareText = context.getString(R.string.share_movie_text, title, "https://idlixku.com/$contentType/$slug")
+                                            val shareType = if (uiState.series != null) "series" else "movie"
+                                            val shareSlug = uiState.series?.slug?.ifBlank { slug }
+                                                ?: uiState.movie?.slug?.ifBlank { slug }
+                                                ?: slug
+                                            val shareText = context.getString(R.string.share_movie_text, title, "https://idlixku.com/$shareType/$shareSlug")
                                             val sendIntent = Intent().apply {
                                                 action = Intent.ACTION_SEND
                                                 putExtra(Intent.EXTRA_TEXT, shareText)
@@ -431,7 +640,7 @@ fun DetailScreen(
                                         }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -441,12 +650,14 @@ fun DetailScreen(
                                             tint = Color.White,
                                             modifier = Modifier.size(18.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = stringResource(R.string.share),
                                             color = TextWhite,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -564,10 +775,20 @@ fun DetailScreen(
                             // Episode Cards
                             items(uiState.episodes) { episode ->
                                 val isSelected = (uiState.playingEpisode?.id ?: uiState.selectedEpisode?.id) == episode.id
+                                val epDownload = uiState.downloadsByContentId[episode.id]
                                 EpisodeCardItem(
                                     episode = episode,
                                     isSelected = isSelected,
-                                    onClick = { viewModel.selectEpisode(episode) }
+                                    downloadItem = epDownload,
+                                    onClick = { viewModel.selectEpisode(episode) },
+                                    onDownloadClick = {
+                                        if (epDownload != null) {
+                                            selectedDownloadSheetContentId = epDownload.contentId
+                                        } else {
+                                            ensureNotificationPermission()
+                                            viewModel.downloadEpisode(episode)
+                                        }
+                                    }
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
@@ -648,6 +869,41 @@ fun DetailScreen(
                 onBack = { isEditingPosition = false }
             )
         }
+
+        // Offline Download Action Sheet
+        val sheetDownloadItem = selectedDownloadSheetContentId?.let { uiState.downloadsByContentId[it] }
+        if (sheetDownloadItem != null) {
+            OfflineDownloadActionSheet(
+                item = sheetDownloadItem,
+                onPlayOffline = {
+                    selectedDownloadSheetContentId = null
+                    if (sheetDownloadItem.contentType == "episode") {
+                        val matchedEp = uiState.episodes.firstOrNull { it.id == sheetDownloadItem.contentId }
+                        if (matchedEp != null) {
+                            viewModel.selectEpisode(matchedEp)
+                        } else {
+                            viewModel.playCurrentMedia()
+                        }
+                    } else {
+                        viewModel.playCurrentMedia()
+                    }
+                },
+                onPause = {
+                    viewModel.pauseDownload(sheetDownloadItem.contentId)
+                },
+                onResume = {
+                    ensureNotificationPermission()
+                    viewModel.resumeDownload(sheetDownloadItem.contentId)
+                },
+                onDelete = {
+                    viewModel.cancelOrRemoveDownload(sheetDownloadItem.contentId)
+                    selectedDownloadSheetContentId = null
+                },
+                onDismiss = {
+                    selectedDownloadSheetContentId = null
+                }
+            )
+        }
     }
 }
 
@@ -655,7 +911,9 @@ fun DetailScreen(
 private fun EpisodeCardItem(
     episode: EpisodeItem,
     isSelected: Boolean,
-    onClick: () -> Unit
+    downloadItem: OfflineDownloadItem?,
+    onClick: () -> Unit,
+    onDownloadClick: () -> Unit
 ) {
     Surface(
         color = if (isSelected) IdlixRed.copy(alpha = 0.15f) else BackgroundElevated,
@@ -725,16 +983,297 @@ private fun EpisodeCardItem(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                val epRuntime = episode.runtime
-                if (epRuntime != null && epRuntime > 0) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "$epRuntime min",
-                        color = TextSecondary,
-                        fontSize = 10.sp
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val epRuntime = episode.runtime
+                    if (epRuntime != null && epRuntime > 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "$epRuntime min",
+                            color = TextSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                    if (downloadItem?.status == DownloadStatus.COMPLETED) {
+                        Text(
+                            text = "${downloadItem.qualityLabel} • ${downloadItem.formattedSize}",
+                            color = IdlixAccentCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else if (downloadItem != null && downloadItem.isActive) {
+                        Text(
+                            text = "${downloadItem.progressPercent}% • ${downloadItem.formattedSize}",
+                            color = IdlixRed,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            IconButton(
+                onClick = onDownloadClick,
+                modifier = Modifier.size(44.dp)
+            ) {
+                when (downloadItem?.status) {
+                    DownloadStatus.QUEUED,
+                    DownloadStatus.RESOLVING -> {
+                        CircularProgressIndicator(
+                            color = IdlixRed,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    DownloadStatus.DOWNLOADING -> {
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                progress = { (downloadItem.progressPercent / 100f).coerceIn(0.05f, 1f) },
+                                color = IdlixRed,
+                                trackColor = Color.White.copy(alpha = 0.2f),
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "${downloadItem.progressPercent}",
+                                color = TextWhite,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    DownloadStatus.PAUSED -> {
+                        Icon(
+                            imageVector = Icons.Default.Pause,
+                            contentDescription = stringResource(R.string.download_resume),
+                            tint = GoldStar,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    DownloadStatus.COMPLETED -> {
+                        Icon(
+                            imageVector = Icons.Default.DownloadDone,
+                            contentDescription = stringResource(R.string.download_downloaded),
+                            tint = IdlixAccentCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    DownloadStatus.FAILED -> {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = stringResource(R.string.download_failed_retry),
+                            tint = IdlixRed,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    null -> {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = stringResource(R.string.download_action),
+                            tint = TextMuted,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OfflineDownloadActionSheet(
+    item: OfflineDownloadItem,
+    onPlayOffline: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = SurfaceDark,
+        contentColor = TextWhite
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.download_sheet_title),
+                color = TextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = item.title,
+                color = TextWhite,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val statusText = when (item.status) {
+                DownloadStatus.QUEUED -> stringResource(R.string.download_status_queued)
+                DownloadStatus.RESOLVING -> stringResource(R.string.download_status_resolving)
+                DownloadStatus.DOWNLOADING -> stringResource(
+                    R.string.download_status_downloading,
+                    item.progressPercent,
+                    item.formattedSize
+                )
+                DownloadStatus.PAUSED -> stringResource(
+                    R.string.download_status_paused,
+                    item.progressPercent,
+                    item.formattedSize
+                )
+                DownloadStatus.COMPLETED -> stringResource(
+                    R.string.download_status_completed,
+                    "${item.qualityLabel} • ${item.formattedSize}"
+                )
+                DownloadStatus.FAILED -> stringResource(
+                    R.string.download_status_failed,
+                    item.errorMessage ?: ""
+                )
+            }
+
+            Text(
+                text = statusText,
+                color = when (item.status) {
+                    DownloadStatus.COMPLETED -> IdlixAccentCyan
+                    DownloadStatus.FAILED -> IdlixRed
+                    DownloadStatus.PAUSED -> GoldStar
+                    else -> TextSecondary
+                },
+                fontSize = 13.sp
+            )
+
+            if (item.status != DownloadStatus.COMPLETED) {
+                Spacer(modifier = Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { (item.progressPercent / 100f).coerceIn(0f, 1f) },
+                    color = IdlixRed,
+                    trackColor = BorderDark,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            if (item.status == DownloadStatus.COMPLETED) {
+                Button(
+                    onClick = onPlayOffline,
+                    colors = ButtonDefaults.buttonColors(containerColor = IdlixRed),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.download_play_offline),
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            } else if (item.isActive) {
+                Button(
+                    onClick = onPause,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Pause,
+                        contentDescription = null,
+                        tint = TextWhite,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.download_pause),
+                        color = TextWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            } else if (item.status == DownloadStatus.PAUSED || item.status == DownloadStatus.FAILED) {
+                Button(
+                    onClick = onResume,
+                    colors = ButtonDefaults.buttonColors(containerColor = IdlixRed),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.download_resume),
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            OutlinedButton(
+                onClick = onDelete,
+                border = BorderStroke(1.dp, IdlixRed.copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = IdlixRed,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (item.status == DownloadStatus.COMPLETED) {
+                        stringResource(R.string.download_delete)
+                    } else {
+                        stringResource(R.string.download_cancel)
+                    },
+                    color = IdlixRed,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

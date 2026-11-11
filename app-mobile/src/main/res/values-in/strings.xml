@@ -208,4 +208,58 @@
     <string name="subdl_error_generic">Terjadi kesalahan dari SubDL: %s</string>
     <string name="subdl_type_title_btn">Ketik Judul Manual</string>
     <string name="advanced_options">Opsi Lanjutan</string>
+
+    <!-- Pembaruan Aplikasi (l10n) -->
+    <string name="about_idlix_version_format">Versi %1$s (Arsitektur Multi-Module)\nDibuat dengan Jetpack Compose &amp; Media3 ExoPlayer</string>
+    <string name="update_section_header">Pembaruan Aplikasi</string>
+    <string name="update_section_desc">Periksa versi terbaru dan pasang pembaruan aplikasi secara langsung.</string>
+    <string name="update_current_version">Versi Saat Ini: v%1$s</string>
+    <string name="update_check_btn">Cek Update</string>
+    <string name="update_checking">Mengecek pembaruan...</string>
+    <string name="update_up_to_date">Aplikasi sudah menggunakan versi terbaru (v%1$s)</string>
+    <string name="update_downloading_progress">Mengunduh pembaruan v%1$s (%2$d%%)</string>
+    <string name="update_downloading_bytes">%1$.1f MB / %2$.1f MB</string>
+    <string name="update_ready_status">Versi baru v%1$s telah diunduh dan siap dipasang.</string>
+    <string name="update_install_btn">Pasang Update (v%1$s)</string>
+    <string name="update_recheck_btn">Cek Ulang</string>
+    <string name="update_dialog_badge">UPDATE BARU</string>
+    <string name="update_dialog_title">Pembaruan Tersedia (v%1$s)</string>
+    <string name="update_dialog_message">Versi terbaru %1$s (v%2$s) telah selesai diunduh dan siap dipasang. Versi Anda saat ini adalah v%3$s.</string>
+    <string name="update_dialog_install_now">Update Sekarang</string>
+    <string name="update_dialog_later">Nanti</string>
+    <string name="update_error_network">Gagal memeriksa pembaruan. Periksa koneksi internet Anda.</string>
+    <string name="update_error_http">Server update merespon dengan kode HTTP %1$d.</string>
+    <string name="update_error_invalid_response">Konfigurasi pembaruan dari server tidak valid.</string>
+    <string name="update_error_download_failed">Gagal mengunduh file APK pembaruan.</string>
+    <string name="update_error_invalid_apk">File APK yang diunduh rusak atau tidak valid.</string>
+    <string name="update_error_install_failed">Tidak dapat membuka pemasang APK di perangkat ini.</string>
+
+    <!-- Unduhan Offline (Khusus Mobile) -->
+    <string name="tab_watch_history">Riwayat Tontonan</string>
+    <string name="tab_offline_downloads">Unduhan Offline</string>
+    <string name="download_action">Unduh</string>
+    <string name="download_downloaded">Terunduh</string>
+    <string name="download_paused_label">Dijeda (%1$d%%)</string>
+    <string name="download_failed_retry">Gagal • Ulangi</string>
+    <string name="download_status_queued">Menunggu antrean unduhan...</string>
+    <string name="download_status_resolving">Menyiapkan kualitas terbaik...</string>
+    <string name="download_status_downloading">Mengunduh %1$d%% • %2$s</string>
+    <string name="download_status_paused">Dijeda pada %1$d%% • %2$s</string>
+    <string name="download_status_completed">Siap ditonton offline • %1$s</string>
+    <string name="download_status_failed">Gagal mengunduh: %1$s</string>
+    <string name="download_pause">Jeda</string>
+    <string name="download_resume">Lanjutkan</string>
+    <string name="download_delete">Hapus Unduhan</string>
+    <string name="download_play_offline">Tonton Offline</string>
+    <string name="download_clear_all_title">Hapus Semua Unduhan?</string>
+    <string name="download_clear_all_message">Seluruh file video dan subtitle offline yang tersimpan di perangkat ini akan dihapus permanen.</string>
+    <string name="download_empty_title">Belum Ada Unduhan Offline</string>
+    <string name="download_empty_desc">Buka halaman detail film atau episode serial lalu ketuk tombol Unduh agar dapat ditonton kapan saja tanpa kuota internet.</string>
+    <string name="download_storage_summary">%1$d video • %2$s terpakai di perangkat</string>
+    <string name="download_channel_name">Unduhan Video Offline</string>
+    <string name="download_channel_desc">Menampilkan progres saat mengunduh film dan episode untuk ditonton secara offline.</string>
+    <string name="download_notification_preparing">Menyiapkan unduhan offline</string>
+    <string name="open_offline_downloads">Buka Unduhan Offline</string>
+    <string name="download_sheet_title">Unduhan Offline</string>
+    <string name="download_cancel">Batalkan Unduhan</string>
 </resources>

@@ -233,4 +233,33 @@
     <string name="update_error_download_failed">Failed to download update APK.</string>
     <string name="update_error_invalid_apk">Downloaded APK file is corrupted or invalid.</string>
     <string name="update_error_install_failed">Could not launch APK installer on this device.</string>
+
+    <!-- Offline Downloads (Mobile Only) -->
+    <string name="tab_watch_history">Watch History</string>
+    <string name="tab_offline_downloads">Offline Downloads</string>
+    <string name="download_action">Download</string>
+    <string name="download_downloaded">Downloaded</string>
+    <string name="download_paused_label">Paused (%1$d%%)</string>
+    <string name="download_failed_retry">Failed • Retry</string>
+    <string name="download_status_queued">Queued for download...</string>
+    <string name="download_status_resolving">Preparing best quality stream...</string>
+    <string name="download_status_downloading">Downloading %1$d%% • %2$s</string>
+    <string name="download_status_paused">Paused at %1$d%% • %2$s</string>
+    <string name="download_status_completed">Ready to watch offline • %1$s</string>
+    <string name="download_status_failed">Download failed: %1$s</string>
+    <string name="download_pause">Pause</string>
+    <string name="download_resume">Resume</string>
+    <string name="download_delete">Delete Download</string>
+    <string name="download_play_offline">Watch Offline</string>
+    <string name="download_clear_all_title">Delete All Downloads?</string>
+    <string name="download_clear_all_message">All offline video files and subtitles stored on this phone will be permanently removed.</string>
+    <string name="download_empty_title">No Offline Downloads Yet</string>
+    <string name="download_empty_desc">Open any movie or series episode and tap Download to watch later without an internet connection.</string>
+    <string name="download_storage_summary">%1$d videos • %2$s used on device</string>
+    <string name="download_channel_name">Offline Video Downloads</string>
+    <string name="download_channel_desc">Shows progress while downloading movies and episodes for offline playback.</string>
+    <string name="download_notification_preparing">Preparing offline download</string>
+    <string name="open_offline_downloads">Open Offline Downloads</string>
+    <string name="download_sheet_title">Offline Download</string>
+    <string name="download_cancel">Cancel Download</string>
 </resources>

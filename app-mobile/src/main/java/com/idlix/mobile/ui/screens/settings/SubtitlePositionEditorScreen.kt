@@ -22,11 +22,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
@@ -279,7 +279,7 @@ fun SubtitlePositionEditorScreen(
                     onClick = { state.nudge(-0.01f, 0f, snapCenter = true) },
                     modifier = Modifier.size(38.dp)
                 ) {
-                    Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Left", tint = TextWhite)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Left", tint = TextWhite)
                 }
 
                 IconButton(
@@ -300,7 +300,7 @@ fun SubtitlePositionEditorScreen(
                     onClick = { state.nudge(0.01f, 0f, snapCenter = true) },
                     modifier = Modifier.size(38.dp)
                 ) {
-                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Right", tint = TextWhite)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Right", tint = TextWhite)
                 }
             }
 

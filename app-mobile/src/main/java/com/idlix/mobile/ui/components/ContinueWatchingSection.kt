@@ -49,7 +49,7 @@ import com.idlix.mobile.ui.theme.TextWhite
 @Composable
 fun ContinueWatchingSection(
     items: List<WatchHistoryItem>,
-    onItemClick: (contentType: String, slug: String) -> Unit,
+    onItemClick: (WatchHistoryItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) return
@@ -70,10 +70,9 @@ fun ContinueWatchingSection(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(items, key = { it.contentId }) { item ->
-                val slug = item.slug ?: item.contentId
                 ContinueWatchingCard(
                     item = item,
-                    onClick = { onItemClick(item.contentType, slug) }
+                    onClick = { onItemClick(item) }
                 )
             }
         }
@@ -100,7 +99,7 @@ fun ContinueWatchingCard(
             colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark)
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                val imageUrl = item.backdropUrl ?: item.posterUrl
+                val imageUrl = item.resolvedThumbnail.ifBlank { item.backdropUrl ?: item.posterUrl }
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = item.title,

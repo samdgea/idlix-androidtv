@@ -2,7 +2,6 @@ package com.idlix.mobile.player
 
 import android.content.Context
 import android.net.Uri
-import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -14,15 +13,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.Renderer
-import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.SingleSampleMediaSource
-import androidx.media3.exoplayer.text.TextOutput
-import androidx.media3.exoplayer.text.TextRenderer
 import com.idlix.data.model.SubtitleTrack
-import java.util.ArrayList
 
 @OptIn(UnstableApi::class)
 class QueryPreservingDataSource(
@@ -95,55 +88,35 @@ object MediaSourceHelper {
         sub: SubtitleTrack?,
         httpDataSourceFactory: DataSource.Factory
     ): MediaSource {
-        val mediaItem = MediaItem.Builder()
-            .setUri(masterUrl)
+        val masterUri = Uri.parse(masterUrl)
+        val combinedDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+        val mediaItemBuilder = MediaItem.Builder()
+            .setUri(masterUri)
             .setMimeType(MimeTypes.APPLICATION_M3U8)
-            .build()
 
-        val hlsSource = HlsMediaSource.Factory(httpDataSourceFactory)
-            .createMediaSource(mediaItem)
+        if (sub != null) {
+            val mimeType = if (sub.path.endsWith(".srt", ignoreCase = true)) {
+                MimeTypes.APPLICATION_SUBRIP
+            } else {
+                MimeTypes.TEXT_VTT
+            }
 
-        if (sub == null) return hlsSource
+            val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.path))
+                .setMimeType(mimeType)
+                .setLanguage(sub.lang)
+                .setLabel(sub.label)
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
+                .build()
 
-        val mimeType = if (sub.path.endsWith(".srt", ignoreCase = true)) {
-            MimeTypes.APPLICATION_SUBRIP
-        } else {
-            MimeTypes.TEXT_VTT
+            mediaItemBuilder.setSubtitleConfigurations(listOf(subtitleConfig))
         }
 
-        val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.path))
-            .setMimeType(mimeType)
-            .setLanguage(sub.lang)
-            .setLabel(sub.label)
-            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
-            .build()
-
-        val subUri = Uri.parse(sub.path)
-        val subDataSourceFactory = if (subUri.scheme == "file" || subUri.scheme == null) {
-            DefaultDataSource.Factory(context)
-        } else {
-            httpDataSourceFactory
-        }
-
-        val subtitleSource = SingleSampleMediaSource.Factory(subDataSourceFactory)
-            .createMediaSource(subtitleConfig, C.TIME_UNSET)
-
-        return MergingMediaSource(hlsSource, subtitleSource)
+        return DefaultMediaSourceFactory(combinedDataSourceFactory)
+            .createMediaSource(mediaItemBuilder.build())
     }
 
     fun createRenderersFactory(context: Context): DefaultRenderersFactory {
-        return object : DefaultRenderersFactory(context) {
-            override fun buildTextRenderers(
-                context: Context,
-                output: TextOutput,
-                outputLooper: Looper,
-                extensionRendererMode: Int,
-                out: ArrayList<Renderer>
-            ) {
-                val renderer = TextRenderer(output, outputLooper)
-                renderer.experimentalSetLegacyDecodingEnabled(true)
-                out.add(renderer)
-            }
-        }
+        return DefaultRenderersFactory(context)
     }
 }

@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val localProperties = Properties().apply {
@@ -22,8 +23,8 @@ android {
         applicationId = "com.idlix.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -113,8 +114,10 @@ dependencies {
     // Coil Image Loading
     implementation(libs.coil.compose)
 
-    // Coroutines
+    // Coroutines & Serialization
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
 }

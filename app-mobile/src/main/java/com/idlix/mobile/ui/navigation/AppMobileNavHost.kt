@@ -19,6 +19,8 @@ import com.idlix.mobile.ui.screens.search.SearchScreen
 import com.idlix.mobile.ui.screens.series.SeriesScreen
 import com.idlix.mobile.ui.screens.settings.SettingsScreen
 import com.idlix.mobile.ui.screens.settings.SubtitlePositionEditorScreen
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 @Composable
 fun AppMobileNavHost(
@@ -39,8 +41,29 @@ fun AppMobileNavHost(
                 onNavigateToDetail = { contentType, slug ->
                     navController.navigate(MobileScreen.Detail.createRoute(contentType, slug))
                 },
+                onContinueWatchingClick = { item ->
+                    val slug = item.slug?.takeIf { it.isNotBlank() } ?: item.contentId
+                    navController.navigate(
+                        MobileScreen.Detail.createRoute(
+                            contentType = item.contentType,
+                            slug = slug,
+                            autoPlay = true,
+                            contentId = item.contentId,
+                            season = item.seasonNumber,
+                            episode = item.episodeNumber
+                        )
+                    )
+                },
                 onNavigateToSettings = {
                     navController.navigate(MobileScreen.Settings.route)
+                },
+                onOpenOfflineDownloads = {
+                    navController.navigate(MobileScreen.Library.createRoute("downloads")) {
+                        popUpTo(navController.graph.startDestinationId) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                    }
                 }
             )
         }
@@ -83,16 +106,51 @@ fun AppMobileNavHost(
 
         composable(
             route = MobileScreen.Library.route,
+            arguments = listOf(
+                navArgument("tab") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = "history"
+                }
+            ),
             enterTransition = { fadeIn(animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) }
-        ) {
+        ) { backStackEntry ->
+            val initialTab = backStackEntry.arguments?.getString("tab")
             LibraryScreen(
                 onNavigateToDetail = { contentType, slug ->
                     navController.navigate(MobileScreen.Detail.createRoute(contentType, slug))
                 },
+                onHistoryItemClick = { item ->
+                    val slug = item.slug?.takeIf { it.isNotBlank() } ?: item.contentId
+                    navController.navigate(
+                        MobileScreen.Detail.createRoute(
+                            contentType = item.contentType,
+                            slug = slug,
+                            autoPlay = true,
+                            contentId = item.contentId,
+                            season = item.seasonNumber,
+                            episode = item.episodeNumber
+                        )
+                    )
+                },
+                onDownloadItemClick = { item ->
+                    val slug = item.slug.takeIf { it.isNotBlank() } ?: item.contentId
+                    navController.navigate(
+                        MobileScreen.Detail.createRoute(
+                            contentType = item.contentType,
+                            slug = slug,
+                            autoPlay = true,
+                            contentId = item.contentId,
+                            season = item.seasonNumber,
+                            episode = item.episodeNumber
+                        )
+                    )
+                },
                 onNavigateToSettings = {
                     navController.navigate(MobileScreen.Settings.route)
-                }
+                },
+                initialTab = initialTab
             )
         }
 
@@ -100,7 +158,26 @@ fun AppMobileNavHost(
             route = MobileScreen.Detail.route,
             arguments = listOf(
                 navArgument("contentType") { type = NavType.StringType },
-                navArgument("slug") { type = NavType.StringType }
+                navArgument("slug") { type = NavType.StringType },
+                navArgument("autoPlay") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+                navArgument("contentId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                },
+                navArgument("season") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                },
+                navArgument("episode") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                }
             ),
             enterTransition = {
                 slideIntoContainer(
@@ -116,10 +193,29 @@ fun AppMobileNavHost(
             }
         ) { backStackEntry ->
             val contentType = backStackEntry.arguments?.getString("contentType") ?: "movie"
-            val slug = backStackEntry.arguments?.getString("slug") ?: ""
+            val rawSlug = backStackEntry.arguments?.getString("slug") ?: ""
+            val slug = try {
+                URLDecoder.decode(rawSlug, StandardCharsets.UTF_8.toString())
+            } catch (_: Exception) {
+                rawSlug
+            }
+            val autoPlay = backStackEntry.arguments?.getBoolean("autoPlay") ?: false
+            val rawContentId = backStackEntry.arguments?.getString("contentId") ?: ""
+            val contentId = try {
+                URLDecoder.decode(rawContentId, StandardCharsets.UTF_8.toString()).takeIf { it.isNotBlank() }
+            } catch (_: Exception) {
+                rawContentId.takeIf { it.isNotBlank() }
+            }
+            val season = backStackEntry.arguments?.getString("season")?.toIntOrNull()
+            val episode = backStackEntry.arguments?.getString("episode")?.toIntOrNull()
+
             DetailScreen(
                 contentType = contentType,
                 slug = slug,
+                autoPlay = autoPlay,
+                resumeContentId = contentId,
+                resumeSeasonNumber = season,
+                resumeEpisodeNumber = episode,
                 onBackClick = { navController.popBackStack() }
             )
         }
