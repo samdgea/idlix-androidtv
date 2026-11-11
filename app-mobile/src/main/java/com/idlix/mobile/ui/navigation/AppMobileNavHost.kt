@@ -56,6 +56,14 @@ fun AppMobileNavHost(
                 },
                 onNavigateToSettings = {
                     navController.navigate(MobileScreen.Settings.route)
+                },
+                onOpenOfflineDownloads = {
+                    navController.navigate(MobileScreen.Library.createRoute("downloads")) {
+                        popUpTo(navController.graph.startDestinationId) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                    }
                 }
             )
         }
@@ -98,9 +106,17 @@ fun AppMobileNavHost(
 
         composable(
             route = MobileScreen.Library.route,
+            arguments = listOf(
+                navArgument("tab") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = "history"
+                }
+            ),
             enterTransition = { fadeIn(animationSpec = tween(300)) },
             exitTransition = { fadeOut(animationSpec = tween(300)) }
-        ) {
+        ) { backStackEntry ->
+            val initialTab = backStackEntry.arguments?.getString("tab")
             LibraryScreen(
                 onNavigateToDetail = { contentType, slug ->
                     navController.navigate(MobileScreen.Detail.createRoute(contentType, slug))
@@ -118,9 +134,23 @@ fun AppMobileNavHost(
                         )
                     )
                 },
+                onDownloadItemClick = { item ->
+                    val slug = item.slug.takeIf { it.isNotBlank() } ?: item.contentId
+                    navController.navigate(
+                        MobileScreen.Detail.createRoute(
+                            contentType = item.contentType,
+                            slug = slug,
+                            autoPlay = true,
+                            contentId = item.contentId,
+                            season = item.seasonNumber,
+                            episode = item.episodeNumber
+                        )
+                    )
+                },
                 onNavigateToSettings = {
                     navController.navigate(MobileScreen.Settings.route)
-                }
+                },
+                initialTab = initialTab
             )
         }
 

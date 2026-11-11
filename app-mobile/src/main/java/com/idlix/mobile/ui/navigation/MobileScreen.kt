@@ -16,7 +16,10 @@ sealed class MobileScreen(val route: String) {
     object Movies : MobileScreen("movies")
     object Series : MobileScreen("series")
     object Search : MobileScreen("search")
-    object Library : MobileScreen("library")
+    object Library : MobileScreen("library?tab={tab}") {
+        const val BASE_ROUTE = "library"
+        fun createRoute(tab: String = "history"): String = "library?tab=$tab"
+    }
     object Settings : MobileScreen("settings")
     object SubtitlePositionEditor : MobileScreen("settings/subtitle_position")
 
@@ -50,7 +53,7 @@ sealed class BottomNavItem(
     object Movies : BottomNavItem(MobileScreen.Movies.route, R.string.movies, Icons.Filled.Movie)
     object Series : BottomNavItem(MobileScreen.Series.route, R.string.series, Icons.Filled.Tv)
     object Search : BottomNavItem(MobileScreen.Search.route, R.string.search, Icons.Filled.Search)
-    object Library : BottomNavItem(MobileScreen.Library.route, R.string.library, Icons.Filled.VideoLibrary)
+    object Library : BottomNavItem(MobileScreen.Library.BASE_ROUTE, R.string.library, Icons.Filled.VideoLibrary)
 
     companion object {
         val items = listOf(Home, Movies, Series, Search, Library)

@@ -1,6 +1,7 @@
 package com.idlix.mobile.ui.screens.detail
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,11 +19,15 @@ import com.idlix.data.model.SubtitleTrack
 import com.idlix.data.repository.IdlixRepository
 import com.idlix.data.repository.SubdlRepository
 import com.idlix.data.util.SubdlTitleCleaner
+import com.idlix.mobile.download.OfflineDownloadItem
+import com.idlix.mobile.download.OfflineDownloadManager
+import com.idlix.mobile.download.OfflineDownloadStore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class NextEpisodeInfo(
     val episode: EpisodeItem,
@@ -72,7 +77,10 @@ data class DetailUiState(
 
     // Next Episode Auto-Prompt
     val nextEpisode: NextEpisodeInfo? = null,
-    val isNextEpisodeDismissed: Boolean = false
+    val isNextEpisodeDismissed: Boolean = false,
+
+    // Offline Downloads (Mobile Only)
+    val downloadsByContentId: Map<String, OfflineDownloadItem> = emptyMap()
 )
 
 class DetailViewModel(
@@ -81,9 +89,20 @@ class DetailViewModel(
 
     private val repository = IdlixRepository()
     private val historyStore = WatchHistoryStore.getInstance(application.applicationContext)
+    private val downloadStore = OfflineDownloadStore.getInstance(application.applicationContext)
 
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            downloadStore.downloadsFlow.collect { items ->
+                _uiState.value = _uiState.value.copy(
+                    downloadsByContentId = items.associateBy { it.contentId }
+                )
+            }
+        }
+    }
 
     private var currentContentId: String = ""
     private var currentContentType: String = ""
@@ -128,11 +147,20 @@ class DetailViewModel(
                         (slug.isNotBlank() && (item.slug == slug || item.contentId == slug))
                 }
 
-                val targetContentId = resumeContentId?.takeIf { it.isNotBlank() } ?: historyItem?.contentId
-                val targetSeason = resumeSeasonNumber ?: historyItem?.seasonNumber
-                val targetEpisode = resumeEpisodeNumber ?: historyItem?.episodeNumber
+                val allDownloads = downloadStore.getAll()
+                val matchedDownload = allDownloads.firstOrNull { dl ->
+                    (!resumeContentId.isNullOrBlank() && dl.contentId == resumeContentId) ||
+                        (slug.isNotBlank() && (dl.slug.equals(slug, ignoreCase = true) || dl.contentId == slug))
+                }
+
+                val targetContentId = resumeContentId?.takeIf { it.isNotBlank() }
+                    ?: historyItem?.contentId
+                    ?: matchedDownload?.contentId
+                val targetSeason = resumeSeasonNumber ?: historyItem?.seasonNumber ?: matchedDownload?.seasonNumber
+                val targetEpisode = resumeEpisodeNumber ?: historyItem?.episodeNumber ?: matchedDownload?.episodeNumber
 
                 var effectiveSlug = historyItem?.slug?.takeIf { it.isNotBlank() }
+                    ?: matchedDownload?.slug?.takeIf { it.isNotBlank() }
                     ?: slug.takeIf { it.isNotBlank() && it != targetContentId }
                     ?: slug
 
@@ -154,6 +182,19 @@ class DetailViewModel(
                         seasonNumber = targetSeason,
                         episodeNumber = targetEpisode
                     )
+                } else if (shouldTriggerAutoPlay && matchedDownload != null && matchedDownload.contentId.isNotBlank()) {
+                    autoPlaybackStarted = true
+                    startStreamPlayback(
+                        contentType = matchedDownload.contentType,
+                        contentId = matchedDownload.contentId,
+                        title = matchedDownload.title,
+                        posterUrl = matchedDownload.localPosterPath ?: matchedDownload.posterUrl,
+                        backdropUrl = matchedDownload.localPosterPath ?: matchedDownload.backdropUrl,
+                        slug = effectiveSlug.takeIf { it.isNotBlank() && it != matchedDownload.contentId },
+                        episodeTitle = matchedDownload.episodeTitle,
+                        seasonNumber = targetSeason,
+                        episodeNumber = targetEpisode
+                    )
                 }
 
                 val isSeries = contentType.equals("tv_series", ignoreCase = true) ||
@@ -163,6 +204,7 @@ class DetailViewModel(
                     historyItem?.contentType.equals("episode", ignoreCase = true) ||
                     historyItem?.contentType.equals("tv_series", ignoreCase = true) ||
                     historyItem?.contentType.equals("series", ignoreCase = true) ||
+                    matchedDownload?.contentType.equals("episode", ignoreCase = true) ||
                     targetSeason != null ||
                     targetEpisode != null
 
@@ -176,23 +218,33 @@ class DetailViewModel(
                     }
 
                     if (rawSeries == null && historyItem != null && historyItem.title.isNotBlank()) {
-                        val baseSeriesTitle = historyItem.title.substringBefore(" -").trim()
-                        if (baseSeriesTitle.isNotBlank()) {
-                            val searchResults = repository.search(baseSeriesTitle)
-                            val matched = searchResults.firstOrNull {
-                                (it.contentType.contains("series", ignoreCase = true) || it.contentType.contains("tv", ignoreCase = true)) &&
-                                    it.title.equals(baseSeriesTitle, ignoreCase = true) &&
-                                    it.slug.isNotBlank()
-                            } ?: searchResults.firstOrNull {
-                                (it.contentType.contains("series", ignoreCase = true) || it.contentType.contains("tv", ignoreCase = true)) &&
-                                    it.slug.isNotBlank()
-                            } ?: searchResults.firstOrNull { it.slug.isNotBlank() }
+                        try {
+                            val baseSeriesTitle = historyItem.title.substringBefore(" -").trim()
+                            if (baseSeriesTitle.isNotBlank()) {
+                                val searchResults = repository.search(baseSeriesTitle)
+                                val matched = searchResults.firstOrNull {
+                                    (it.contentType.contains("series", ignoreCase = true) || it.contentType.contains("tv", ignoreCase = true)) &&
+                                        it.title.equals(baseSeriesTitle, ignoreCase = true) &&
+                                        it.slug.isNotBlank()
+                                } ?: searchResults.firstOrNull {
+                                    (it.contentType.contains("series", ignoreCase = true) || it.contentType.contains("tv", ignoreCase = true)) &&
+                                        it.slug.isNotBlank()
+                                } ?: searchResults.firstOrNull { it.slug.isNotBlank() }
 
-                            if (matched != null) {
-                                effectiveSlug = matched.slug
-                                rawSeries = repository.getSeriesDetail(effectiveSlug)
+                                if (matched != null) {
+                                    effectiveSlug = matched.slug
+                                    rawSeries = repository.getSeriesDetail(effectiveSlug)
+                                }
                             }
+                        } catch (_: Exception) {
                         }
+                    }
+
+                    val offlineSeriesDownloads = allDownloads.filter { dl ->
+                        dl.contentType == "episode" && (
+                            (effectiveSlug.isNotBlank() && dl.slug.equals(effectiveSlug, ignoreCase = true)) ||
+                                (!targetContentId.isNullOrBlank() && dl.contentId == targetContentId)
+                            )
                     }
 
                     if (rawSeries != null) {
@@ -270,40 +322,84 @@ class DetailViewModel(
                                 )
                             }
                         }
-                    } else if (historyItem != null) {
-                        val fallbackSeasonNum = targetSeason ?: 1
-                        val fallbackEpNum = targetEpisode ?: 1
-                        val fallbackSeason = Season(
-                            seasonNumber = fallbackSeasonNum,
-                            name = "Season $fallbackSeasonNum"
-                        )
-                        val fallbackEp = EpisodeItem(
-                            id = historyItem.contentId,
-                            episodeNumber = fallbackEpNum,
-                            name = historyItem.episodeTitle ?: historyItem.title.substringAfter(": ", "Episode $fallbackEpNum"),
-                            stillPath = historyItem.posterUrl
-                        )
+                    } else if (offlineSeriesDownloads.isNotEmpty() || historyItem != null) {
+                        val primaryDl = offlineSeriesDownloads.firstOrNull { it.contentId == targetContentId }
+                            ?: offlineSeriesDownloads.firstOrNull()
+                        val seasonNumbers = offlineSeriesDownloads.mapNotNull { it.seasonNumber }
+                            .distinct()
+                            .sorted()
+                            .ifEmpty { listOf(targetSeason ?: 1) }
+                        val fallbackSeasons = seasonNumbers.map { sNum ->
+                            Season(seasonNumber = sNum, name = "Season $sNum")
+                        }
+                        val activeSeasonNum = targetSeason ?: seasonNumbers.first()
+                        val activeSeason = fallbackSeasons.firstOrNull { it.seasonNumber == activeSeasonNum }
+                            ?: fallbackSeasons.first()
+
+                        val offlineEpsForSeason = offlineSeriesDownloads
+                            .filter { (it.seasonNumber ?: 1) == activeSeason.seasonNumber }
+                            .sortedBy { it.episodeNumber ?: 1 }
+                            .map { dl ->
+                                EpisodeItem(
+                                    id = dl.contentId,
+                                    episodeNumber = dl.episodeNumber ?: 1,
+                                    name = dl.episodeTitle?.substringAfter(": ")
+                                        ?: dl.title.substringAfter(": ", "Episode ${dl.episodeNumber ?: 1}"),
+                                    overview = dl.overview,
+                                    stillPath = dl.localPosterPath ?: dl.posterUrl,
+                                    runtime = dl.runtimeMin
+                                )
+                            }
+
+                        val fallbackEps = offlineEpsForSeason.ifEmpty {
+                            val fallbackEpNum = targetEpisode ?: 1
+                            listOf(
+                                EpisodeItem(
+                                    id = historyItem?.contentId ?: primaryDl?.contentId.orEmpty(),
+                                    episodeNumber = fallbackEpNum,
+                                    name = historyItem?.episodeTitle
+                                        ?: primaryDl?.episodeTitle
+                                        ?: historyItem?.title?.substringAfter(": ", "Episode $fallbackEpNum")
+                                        ?: "Episode $fallbackEpNum",
+                                    stillPath = primaryDl?.localPosterPath ?: historyItem?.posterUrl ?: primaryDl?.posterUrl
+                                )
+                            )
+                        }
+
+                        val selectedEp = fallbackEps.firstOrNull {
+                            (!targetContentId.isNullOrBlank() && it.id == targetContentId) ||
+                                (targetEpisode != null && it.episodeNumber == targetEpisode)
+                        } ?: fallbackEps.first()
+
+                        val seriesTitle = primaryDl?.seriesTitle?.takeIf { it.isNotBlank() }
+                            ?: primaryDl?.title?.substringBefore(" -")?.takeIf { it.isNotBlank() }
+                            ?: historyItem?.title?.substringBefore(" -")?.ifBlank { historyItem.title }
+                            ?: "Series"
+
                         val fallbackSeries = SeriesDetail(
-                            id = historyItem.contentId,
-                            title = historyItem.title.substringBefore(" -").ifBlank { historyItem.title },
+                            id = primaryDl?.contentId ?: historyItem?.contentId.orEmpty(),
+                            title = seriesTitle,
                             slug = effectiveSlug,
-                            posterPath = historyItem.posterUrl,
-                            backdropPath = historyItem.backdropUrl,
-                            seasons = listOf(fallbackSeason)
+                            overview = primaryDl?.overview,
+                            firstAirDate = primaryDl?.year,
+                            voteAverage = primaryDl?.rating,
+                            posterPath = primaryDl?.localPosterPath ?: historyItem?.posterUrl ?: primaryDl?.posterUrl,
+                            backdropPath = primaryDl?.localPosterPath ?: historyItem?.backdropUrl ?: primaryDl?.backdropUrl,
+                            seasons = fallbackSeasons
                         )
                         _uiState.value = _uiState.value.copy(
                             isLoadingDetail = false,
                             detailError = null,
                             series = fallbackSeries,
                             movie = null,
-                            selectedSeason = fallbackSeason,
-                            episodes = listOf(fallbackEp),
-                            selectedEpisode = fallbackEp,
-                            playingEpisode = if (shouldTriggerAutoPlay || autoPlaybackStarted) fallbackEp else _uiState.value.playingEpisode,
-                            playingSeasonNumber = if (shouldTriggerAutoPlay || autoPlaybackStarted) fallbackSeasonNum else _uiState.value.playingSeasonNumber
+                            selectedSeason = activeSeason,
+                            episodes = fallbackEps,
+                            selectedEpisode = selectedEp,
+                            playingEpisode = if (shouldTriggerAutoPlay || autoPlaybackStarted) selectedEp else _uiState.value.playingEpisode,
+                            playingSeasonNumber = if (shouldTriggerAutoPlay || autoPlaybackStarted) activeSeason.seasonNumber else _uiState.value.playingSeasonNumber
                         )
                         if (shouldTriggerAutoPlay && !autoPlaybackStarted) {
-                            playEpisode(fallbackSeries, fallbackSeasonNum, fallbackEp)
+                            playEpisode(fallbackSeries, activeSeason.seasonNumber, selectedEp)
                         }
                     } else {
                         _uiState.value = _uiState.value.copy(
@@ -321,19 +417,22 @@ class DetailViewModel(
                     }
 
                     if (rawMovie == null && historyItem != null && historyItem.title.isNotBlank()) {
-                        val cleanTitle = SubdlTitleCleaner.clean(historyItem.title).title.ifBlank { historyItem.title }
-                        val searchResults = repository.search(cleanTitle)
-                        val matched = searchResults.firstOrNull {
-                            !targetContentId.isNullOrBlank() && it.id == targetContentId && it.slug.isNotBlank()
-                        } ?: searchResults.firstOrNull {
-                            it.title.equals(historyItem.title, ignoreCase = true) && it.slug.isNotBlank()
-                        } ?: searchResults.firstOrNull {
-                            it.title.equals(cleanTitle, ignoreCase = true) && it.slug.isNotBlank()
-                        } ?: searchResults.firstOrNull { it.slug.isNotBlank() }
+                        try {
+                            val cleanTitle = SubdlTitleCleaner.clean(historyItem.title).title.ifBlank { historyItem.title }
+                            val searchResults = repository.search(cleanTitle)
+                            val matched = searchResults.firstOrNull {
+                                !targetContentId.isNullOrBlank() && it.id == targetContentId && it.slug.isNotBlank()
+                            } ?: searchResults.firstOrNull {
+                                it.title.equals(historyItem.title, ignoreCase = true) && it.slug.isNotBlank()
+                            } ?: searchResults.firstOrNull {
+                                it.title.equals(cleanTitle, ignoreCase = true) && it.slug.isNotBlank()
+                            } ?: searchResults.firstOrNull { it.slug.isNotBlank() }
 
-                        if (matched != null) {
-                            effectiveSlug = matched.slug
-                            rawMovie = repository.getMovieDetail(effectiveSlug)
+                            if (matched != null) {
+                                effectiveSlug = matched.slug
+                                rawMovie = repository.getMovieDetail(effectiveSlug)
+                            }
+                        } catch (_: Exception) {
                         }
                     }
 
@@ -363,13 +462,17 @@ class DetailViewModel(
                                 episodeNumber = null
                             )
                         }
-                    } else if (historyItem != null) {
+                    } else if (matchedDownload != null || historyItem != null) {
                         val fallbackMovie = MovieDetail(
-                            id = historyItem.contentId,
-                            title = historyItem.title,
+                            id = matchedDownload?.contentId ?: historyItem?.contentId.orEmpty(),
+                            title = matchedDownload?.title ?: historyItem?.title.orEmpty(),
                             slug = effectiveSlug,
-                            posterPath = historyItem.posterUrl,
-                            backdropPath = historyItem.backdropUrl
+                            overview = matchedDownload?.overview,
+                            releaseDate = matchedDownload?.year,
+                            voteAverage = matchedDownload?.rating,
+                            runtime = matchedDownload?.runtimeMin,
+                            posterPath = matchedDownload?.localPosterPath ?: historyItem?.posterUrl ?: matchedDownload?.posterUrl,
+                            backdropPath = matchedDownload?.localPosterPath ?: historyItem?.backdropUrl ?: matchedDownload?.backdropUrl
                         )
                         _uiState.value = _uiState.value.copy(
                             isLoadingDetail = false,
@@ -416,8 +519,8 @@ class DetailViewModel(
             }
 
             _uiState.value = _uiState.value.copy(selectedSeason = season)
+            val seriesSlug = series.slug.ifBlank { currentSlug ?: "" }
             try {
-                val seriesSlug = series.slug.ifBlank { currentSlug ?: "" }
                 val epRes = repository.getEpisodeDetail(seriesSlug, season.seasonNumber, 1)
                 val newEpisodes = epRes?.season?.episodes ?: emptyList()
                 if (newEpisodes.isNotEmpty()) {
@@ -425,9 +528,32 @@ class DetailViewModel(
                         episodes = newEpisodes,
                         selectedEpisode = newEpisodes.firstOrNull()
                     )
+                    return@launch
                 }
             } catch (e: Exception) {
                 Log.w("DetailViewModel", "Failed to fetch episodes for season ${season.seasonNumber}: ${e.message}")
+            }
+
+            // Offline fallback for selected season
+            val offlineEps = downloadStore.getBySlug(seriesSlug)
+                .filter { it.contentType == "episode" && (it.seasonNumber ?: 1) == season.seasonNumber }
+                .sortedBy { it.episodeNumber ?: 1 }
+                .map { dl ->
+                    EpisodeItem(
+                        id = dl.contentId,
+                        episodeNumber = dl.episodeNumber ?: 1,
+                        name = dl.episodeTitle?.substringAfter(": ")
+                            ?: dl.title.substringAfter(": ", "Episode ${dl.episodeNumber ?: 1}"),
+                        overview = dl.overview,
+                        stillPath = dl.localPosterPath ?: dl.posterUrl,
+                        runtime = dl.runtimeMin
+                    )
+                }
+            if (offlineEps.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    episodes = offlineEps,
+                    selectedEpisode = offlineEps.firstOrNull()
+                )
             }
         }
     }
@@ -585,6 +711,35 @@ class DetailViewModel(
                 )
             }
 
+            // Offline-first playback: if downloaded and local playlist exists, play immediately without countdown or network
+            val offlineItem = downloadStore.getById(contentId)
+            if (offlineItem != null && offlineItem.isPlayableOffline) {
+                val localPlaylistFile = File(offlineItem.localPlaylistPath!!)
+                val localMasterUri = Uri.fromFile(localPlaylistFile).toString()
+                val localResolved = ResolvedPlayback(
+                    title = offlineItem.title.ifBlank { title },
+                    hlsMasterUrl = localMasterUri,
+                    subtitles = offlineItem.localSubtitles,
+                    durationSec = offlineItem.durationSec,
+                    videoId = offlineItem.contentId
+                )
+                val prefLang = com.idlix.data.util.LocaleHelper.getPreferredLanguage()
+                val fallbackLang = if (prefLang == "id") "en" else "id"
+                val defaultSub = localResolved.subtitles.firstOrNull { it.lang.equals(prefLang, ignoreCase = true) }
+                    ?: localResolved.subtitles.firstOrNull { it.lang.equals(fallbackLang, ignoreCase = true) }
+                    ?: localResolved.subtitles.firstOrNull()
+
+                _uiState.value = _uiState.value.copy(
+                    isStreamLoading = false,
+                    countdownSeconds = 0,
+                    streamError = null,
+                    resolvedStream = localResolved,
+                    selectedSubtitle = defaultSub,
+                    isSubtitleEnabled = defaultSub != null
+                )
+                return@launch
+            }
+
             val result = repository.resolveStream(
                 contentType = contentType,
                 contentId = contentId,
@@ -627,7 +782,44 @@ class DetailViewModel(
     ): Job {
         return viewModelScope.launch {
             try {
-                val series = repository.getSeriesDetail(seriesSlug) ?: return@launch
+                val series = try {
+                    repository.getSeriesDetail(seriesSlug)
+                } catch (_: Exception) {
+                    null
+                }
+                if (series == null) {
+                    val offlineEps = downloadStore.getBySlug(seriesSlug)
+                        .filter { it.contentType == "episode" && it.isPlayableOffline }
+                        .sortedWith(compareBy<OfflineDownloadItem> { it.seasonNumber ?: 1 }.thenBy { it.episodeNumber ?: 1 })
+                    val curIdx = offlineEps.indexOfFirst {
+                        it.contentId == currentEpisodeId ||
+                            ((seasonNumber != null && it.seasonNumber == seasonNumber) &&
+                                (episodeNumber != null && it.episodeNumber == episodeNumber))
+                    }
+                    if (curIdx >= 0 && curIdx + 1 < offlineEps.size) {
+                        val nextDl = offlineEps[curIdx + 1]
+                        val nextEp = EpisodeItem(
+                            id = nextDl.contentId,
+                            episodeNumber = nextDl.episodeNumber ?: 1,
+                            name = nextDl.episodeTitle?.substringAfter(": ")
+                                ?: nextDl.title.substringAfter(": ", "Episode ${nextDl.episodeNumber ?: 1}"),
+                            overview = nextDl.overview,
+                            stillPath = nextDl.localPosterPath ?: nextDl.posterUrl,
+                            runtime = nextDl.runtimeMin
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            nextEpisode = NextEpisodeInfo(
+                                episode = nextEp,
+                                seasonNumber = nextDl.seasonNumber ?: 1,
+                                seriesTitle = nextDl.seriesTitle ?: fallbackTitle.substringBefore(" -"),
+                                seriesSlug = seriesSlug,
+                                posterUrl = nextDl.localPosterPath ?: nextDl.posterUrl ?: posterUrl,
+                                backdropUrl = nextDl.localPosterPath ?: nextDl.backdropUrl ?: backdropUrl
+                            )
+                        )
+                    }
+                    return@launch
+                }
                 val defaultSeason = series.defaultSeason
                 val seriesTitle = series.title.ifBlank { fallbackTitle.substringBefore(" -") }
                 val rawSeasons = series.seasons.ifEmpty {
@@ -972,6 +1164,61 @@ class DetailViewModel(
         if (currentContentId.isNotBlank() && durationMs > 0) {
             historyStore.updateProgress(currentContentId, currentPosMs, durationMs)
         }
+    }
+
+    fun downloadMovie(movie: MovieDetail) {
+        val effectiveSlug = movie.slug.ifBlank { currentSlug ?: movie.id }
+        OfflineDownloadManager.enqueueDownload(
+            context = getApplication(),
+            contentId = movie.id,
+            contentType = "movie",
+            slug = effectiveSlug,
+            title = movie.title,
+            overview = movie.overview,
+            year = movie.releaseDate?.take(4),
+            rating = movie.voteAverage,
+            runtimeMin = movie.runtime,
+            posterUrl = movie.fullPosterUrl,
+            backdropUrl = movie.fullBackdropUrl
+        )
+    }
+
+    fun downloadEpisode(episode: EpisodeItem) {
+        val series = _uiState.value.series ?: return
+        val seasonNum = _uiState.value.selectedSeason?.seasonNumber ?: 1
+        val effectiveSlug = series.slug.ifBlank { currentSlug ?: series.id }
+        val epLabel = "S${seasonNum}E${episode.episodeNumber}: ${episode.name}"
+        val fullTitle = "${series.title} - $epLabel"
+
+        OfflineDownloadManager.enqueueDownload(
+            context = getApplication(),
+            contentId = episode.id,
+            contentType = "episode",
+            slug = effectiveSlug,
+            title = fullTitle,
+            seriesTitle = series.title,
+            episodeTitle = epLabel,
+            seasonNumber = seasonNum,
+            episodeNumber = episode.episodeNumber,
+            overview = episode.overview?.takeIf { it.isNotBlank() } ?: series.overview,
+            year = series.firstAirDate?.take(4),
+            rating = series.voteAverage,
+            runtimeMin = episode.runtime,
+            posterUrl = episode.fullStillUrl.ifBlank { series.fullPosterUrl },
+            backdropUrl = series.fullBackdropUrl
+        )
+    }
+
+    fun pauseDownload(contentId: String) {
+        OfflineDownloadManager.pauseDownload(getApplication(), contentId)
+    }
+
+    fun resumeDownload(contentId: String) {
+        OfflineDownloadManager.resumeDownload(getApplication(), contentId)
+    }
+
+    fun cancelOrRemoveDownload(contentId: String) {
+        OfflineDownloadManager.cancelAndRemoveDownload(getApplication(), contentId)
     }
 
     override fun onCleared() {

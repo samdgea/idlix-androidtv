@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -27,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -60,6 +62,7 @@ fun HomeScreen(
         onNavigateToDetail(item.contentType, slug)
     },
     onNavigateToSettings: () -> Unit,
+    onOpenOfflineDownloads: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -103,6 +106,22 @@ fun HomeScreen(
                         Icon(Icons.Filled.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.size(6.dp))
                         Text(stringResource(R.string.retry))
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenOfflineDownloads
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = TextWhite,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.open_offline_downloads),
+                            color = TextWhite
+                        )
                     }
                 }
             }
@@ -173,14 +192,24 @@ fun HomeScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = { viewModel.loadData() },
-                                colors = ButtonDefaults.buttonColors(containerColor = IdlixRed),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(stringResource(R.string.retry), fontSize = 12.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(
+                                    onClick = { viewModel.loadData() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = IdlixRed),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(stringResource(R.string.retry), fontSize = 12.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = onOpenOfflineDownloads,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Icon(Icons.Filled.Download, contentDescription = null, tint = TextWhite, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(stringResource(R.string.open_offline_downloads), color = TextWhite, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
