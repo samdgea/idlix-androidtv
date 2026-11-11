@@ -67,16 +67,20 @@ class WatchHistoryStore private constructor(context: Context) {
         val existingIndex = currentList.indexOfFirst { it.contentId == contentId }
         val savedPos = getSavedPosition(contentId)
         val savedDur = prefs.getLong("${contentId}_dur", 0L)
+        val cleanPoster = posterUrl?.takeIf { it.isNotBlank() }
+        val cleanBackdrop = backdropUrl?.takeIf { it.isNotBlank() }
+        val cleanSlug = slug?.takeIf { it.isNotBlank() }
+        val cleanEpisodeTitle = episodeTitle?.takeIf { it.isNotBlank() }
 
         val updatedItem = if (existingIndex >= 0) {
             val old = currentList[existingIndex]
             old.copy(
                 contentType = contentType,
                 title = title,
-                posterUrl = posterUrl ?: old.posterUrl,
-                backdropUrl = backdropUrl ?: old.backdropUrl,
-                slug = slug ?: old.slug,
-                episodeTitle = episodeTitle ?: old.episodeTitle,
+                posterUrl = cleanPoster ?: old.posterUrl?.takeIf { it.isNotBlank() },
+                backdropUrl = cleanBackdrop ?: old.backdropUrl?.takeIf { it.isNotBlank() },
+                slug = cleanSlug ?: old.slug?.takeIf { it.isNotBlank() },
+                episodeTitle = cleanEpisodeTitle ?: old.episodeTitle?.takeIf { it.isNotBlank() },
                 seasonNumber = seasonNumber ?: old.seasonNumber,
                 episodeNumber = episodeNumber ?: old.episodeNumber,
                 positionMs = if (old.positionMs > 0L) old.positionMs else savedPos,
@@ -88,10 +92,10 @@ class WatchHistoryStore private constructor(context: Context) {
                 contentId = contentId,
                 contentType = contentType,
                 title = title,
-                posterUrl = posterUrl,
-                backdropUrl = backdropUrl,
-                slug = slug,
-                episodeTitle = episodeTitle,
+                posterUrl = cleanPoster,
+                backdropUrl = cleanBackdrop,
+                slug = cleanSlug,
+                episodeTitle = cleanEpisodeTitle,
                 seasonNumber = seasonNumber,
                 episodeNumber = episodeNumber,
                 positionMs = savedPos,

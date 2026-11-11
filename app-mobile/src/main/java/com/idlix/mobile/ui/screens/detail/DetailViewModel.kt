@@ -91,13 +91,30 @@ class DetailViewModel(
     private var currentPosterUrl: String? = null
     private var currentBackdropUrl: String? = null
     private var currentSlug: String? = null
+    private var currentEpisodeTitle: String? = null
     private var currentSeasonNumber: Int? = null
     private var currentEpisodeNumber: Int? = null
+    private var loadedRequestKey: String? = null
 
     private var playbackJob: Job? = null
     private var resolveNextEpisodeJob: Job? = null
 
-    fun loadDetail(contentType: String, slug: String) {
+    fun loadDetail(
+        contentType: String,
+        slug: String,
+        autoPlay: Boolean = false,
+        resumeContentId: String? = null,
+        resumeSeasonNumber: Int? = null,
+        resumeEpisodeNumber: Int? = null
+    ) {
+        val requestKey = "$contentType|$slug|${resumeContentId.orEmpty()}|${resumeSeasonNumber ?: ""}|${resumeEpisodeNumber ?: ""}"
+        val isFirstLoadForRequest = loadedRequestKey != requestKey
+        if (!isFirstLoadForRequest && (_uiState.value.movie != null || _uiState.value.series != null) && _uiState.value.detailError == null) {
+            return
+        }
+        loadedRequestKey = requestKey
+        val shouldTriggerAutoPlay = autoPlay && isFirstLoadForRequest
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoadingDetail = true,
@@ -105,29 +122,189 @@ class DetailViewModel(
             )
 
             try {
-                if (contentType == "tv_series" || contentType == "series") {
-                    val series = repository.getSeriesDetail(slug)
-                    if (series != null) {
+                val allHistory = historyStore.getAllHistory()
+                val historyItem = allHistory.firstOrNull { item ->
+                    (!resumeContentId.isNullOrBlank() && item.contentId == resumeContentId) ||
+                        (slug.isNotBlank() && (item.slug == slug || item.contentId == slug))
+                }
+
+                val targetContentId = resumeContentId?.takeIf { it.isNotBlank() } ?: historyItem?.contentId
+                val targetSeason = resumeSeasonNumber ?: historyItem?.seasonNumber
+                val targetEpisode = resumeEpisodeNumber ?: historyItem?.episodeNumber
+
+                var effectiveSlug = historyItem?.slug?.takeIf { it.isNotBlank() }
+                    ?: slug.takeIf { it.isNotBlank() && it != targetContentId }
+                    ?: slug
+
+                currentSlug = effectiveSlug
+
+                var autoPlaybackStarted = false
+                if (shouldTriggerAutoPlay && historyItem != null && historyItem.contentId.isNotBlank() &&
+                    (historyItem.contentType == "movie" || historyItem.contentType == "episode")
+                ) {
+                    autoPlaybackStarted = true
+                    startStreamPlayback(
+                        contentType = historyItem.contentType,
+                        contentId = historyItem.contentId,
+                        title = historyItem.title,
+                        posterUrl = historyItem.posterUrl,
+                        backdropUrl = historyItem.backdropUrl,
+                        slug = effectiveSlug.takeIf { it.isNotBlank() && it != historyItem.contentId },
+                        episodeTitle = historyItem.episodeTitle,
+                        seasonNumber = targetSeason,
+                        episodeNumber = targetEpisode
+                    )
+                }
+
+                val isSeries = contentType.equals("tv_series", ignoreCase = true) ||
+                    contentType.equals("series", ignoreCase = true) ||
+                    contentType.equals("tv", ignoreCase = true) ||
+                    contentType.equals("episode", ignoreCase = true) ||
+                    historyItem?.contentType.equals("episode", ignoreCase = true) ||
+                    historyItem?.contentType.equals("tv_series", ignoreCase = true) ||
+                    historyItem?.contentType.equals("series", ignoreCase = true) ||
+                    targetSeason != null ||
+                    targetEpisode != null
+
+                if (isSeries) {
+                    var rawSeries = if (effectiveSlug.isNotBlank() && effectiveSlug != targetContentId) {
+                        repository.getSeriesDetail(effectiveSlug)
+                    } else null
+
+                    if (rawSeries == null && effectiveSlug.isNotBlank()) {
+                        rawSeries = repository.getSeriesDetail(effectiveSlug)
+                    }
+
+                    if (rawSeries == null && historyItem != null && historyItem.title.isNotBlank()) {
+                        val baseSeriesTitle = historyItem.title.substringBefore(" -").trim()
+                        if (baseSeriesTitle.isNotBlank()) {
+                            val searchResults = repository.search(baseSeriesTitle)
+                            val matched = searchResults.firstOrNull {
+                                (it.contentType.contains("series", ignoreCase = true) || it.contentType.contains("tv", ignoreCase = true)) &&
+                                    it.title.equals(baseSeriesTitle, ignoreCase = true) &&
+                                    it.slug.isNotBlank()
+                            } ?: searchResults.firstOrNull {
+                                (it.contentType.contains("series", ignoreCase = true) || it.contentType.contains("tv", ignoreCase = true)) &&
+                                    it.slug.isNotBlank()
+                            } ?: searchResults.firstOrNull { it.slug.isNotBlank() }
+
+                            if (matched != null) {
+                                effectiveSlug = matched.slug
+                                rawSeries = repository.getSeriesDetail(effectiveSlug)
+                            }
+                        }
+                    }
+
+                    if (rawSeries != null) {
+                        val series = rawSeries.copy(slug = rawSeries.slug.ifBlank { effectiveSlug })
+                        currentSlug = series.slug
+
                         val allSeasons = series.seasons
                         val defaultSeason = series.defaultSeason
-                        val defaultSeasonNum = defaultSeason?.seasonNumber
-                        val initialSeason = allSeasons.firstOrNull { it.seasonNumber == defaultSeasonNum }
-                            ?: defaultSeason?.let { Season(id = it.id, seasonNumber = it.seasonNumber, name = it.name) }
-                            ?: allSeasons.firstOrNull() ?: Season(
-                                seasonNumber = defaultSeason?.seasonNumber ?: 1,
-                                name = defaultSeason?.name ?: "Season 1"
+                        val desiredSeasonNum = targetSeason ?: defaultSeason?.seasonNumber
+                        val initialSeason = allSeasons.firstOrNull { it.seasonNumber == desiredSeasonNum }
+                            ?: defaultSeason?.let {
+                                if (desiredSeasonNum == null || it.seasonNumber == desiredSeasonNum) {
+                                    Season(id = it.id, seasonNumber = it.seasonNumber, name = it.name)
+                                } else null
+                            }
+                            ?: allSeasons.firstOrNull()
+                            ?: Season(
+                                seasonNumber = desiredSeasonNum ?: 1,
+                                name = if (desiredSeasonNum != null) "Season $desiredSeasonNum" else (defaultSeason?.name ?: "Season 1")
                             )
-                        val initialEpisodes = defaultSeason?.episodes ?: emptyList()
-                        val firstEp = initialEpisodes.firstOrNull()
+
+                        val initialEpisodes = if (defaultSeason != null && defaultSeason.seasonNumber == initialSeason.seasonNumber && defaultSeason.episodes.isNotEmpty()) {
+                            defaultSeason.episodes
+                        } else {
+                            try {
+                                repository.getEpisodeDetail(series.slug, initialSeason.seasonNumber, 1)?.season?.episodes
+                                    ?.takeIf { it.isNotEmpty() }
+                                    ?: defaultSeason?.episodes
+                                    ?: emptyList()
+                            } catch (_: Exception) {
+                                defaultSeason?.episodes ?: emptyList()
+                            }
+                        }
+
+                        val matchedEp = initialEpisodes.firstOrNull {
+                            (!targetContentId.isNullOrBlank() && it.id == targetContentId) ||
+                                (targetEpisode != null && it.episodeNumber == targetEpisode)
+                        } ?: initialEpisodes.firstOrNull()
 
                         _uiState.value = _uiState.value.copy(
                             isLoadingDetail = false,
+                            detailError = null,
                             series = series,
                             movie = null,
                             selectedSeason = initialSeason,
                             episodes = initialEpisodes,
-                            selectedEpisode = firstEp
+                            selectedEpisode = matchedEp,
+                            playingEpisode = if (shouldTriggerAutoPlay || autoPlaybackStarted) (matchedEp ?: _uiState.value.playingEpisode) else _uiState.value.playingEpisode,
+                            playingSeasonNumber = if (shouldTriggerAutoPlay || autoPlaybackStarted) initialSeason.seasonNumber else _uiState.value.playingSeasonNumber
                         )
+
+                        if (shouldTriggerAutoPlay && !autoPlaybackStarted && matchedEp != null) {
+                            playEpisode(series, initialSeason.seasonNumber, matchedEp)
+                        } else if (autoPlaybackStarted && series.slug.isNotBlank()) {
+                            historyStore.recordStartPlayback(
+                                contentId = currentContentId,
+                                contentType = currentContentType,
+                                title = currentContentTitle,
+                                posterUrl = currentPosterUrl,
+                                backdropUrl = currentBackdropUrl,
+                                slug = series.slug,
+                                episodeTitle = currentEpisodeTitle,
+                                seasonNumber = currentSeasonNumber,
+                                episodeNumber = currentEpisodeNumber
+                            )
+                            if (resolveNextEpisodeJob == null) {
+                                resolveNextEpisodeJob = resolveNextEpisode(
+                                    seriesSlug = series.slug,
+                                    currentEpisodeId = currentContentId,
+                                    seasonNumber = currentSeasonNumber,
+                                    episodeNumber = currentEpisodeNumber,
+                                    fallbackTitle = currentContentTitle,
+                                    posterUrl = currentPosterUrl,
+                                    backdropUrl = currentBackdropUrl
+                                )
+                            }
+                        }
+                    } else if (historyItem != null) {
+                        val fallbackSeasonNum = targetSeason ?: 1
+                        val fallbackEpNum = targetEpisode ?: 1
+                        val fallbackSeason = Season(
+                            seasonNumber = fallbackSeasonNum,
+                            name = "Season $fallbackSeasonNum"
+                        )
+                        val fallbackEp = EpisodeItem(
+                            id = historyItem.contentId,
+                            episodeNumber = fallbackEpNum,
+                            name = historyItem.episodeTitle ?: historyItem.title.substringAfter(": ", "Episode $fallbackEpNum"),
+                            stillPath = historyItem.posterUrl
+                        )
+                        val fallbackSeries = SeriesDetail(
+                            id = historyItem.contentId,
+                            title = historyItem.title.substringBefore(" -").ifBlank { historyItem.title },
+                            slug = effectiveSlug,
+                            posterPath = historyItem.posterUrl,
+                            backdropPath = historyItem.backdropUrl,
+                            seasons = listOf(fallbackSeason)
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            isLoadingDetail = false,
+                            detailError = null,
+                            series = fallbackSeries,
+                            movie = null,
+                            selectedSeason = fallbackSeason,
+                            episodes = listOf(fallbackEp),
+                            selectedEpisode = fallbackEp,
+                            playingEpisode = if (shouldTriggerAutoPlay || autoPlaybackStarted) fallbackEp else _uiState.value.playingEpisode,
+                            playingSeasonNumber = if (shouldTriggerAutoPlay || autoPlaybackStarted) fallbackSeasonNum else _uiState.value.playingSeasonNumber
+                        )
+                        if (shouldTriggerAutoPlay && !autoPlaybackStarted) {
+                            playEpisode(fallbackSeries, fallbackSeasonNum, fallbackEp)
+                        }
                     } else {
                         _uiState.value = _uiState.value.copy(
                             isLoadingDetail = false,
@@ -135,14 +312,75 @@ class DetailViewModel(
                         )
                     }
                 } else {
-                    val movie = repository.getMovieDetail(slug)
-                    if (movie != null) {
+                    var rawMovie = if (effectiveSlug.isNotBlank() && effectiveSlug != targetContentId) {
+                        repository.getMovieDetail(effectiveSlug)
+                    } else null
+
+                    if (rawMovie == null && effectiveSlug.isNotBlank()) {
+                        rawMovie = repository.getMovieDetail(effectiveSlug)
+                    }
+
+                    if (rawMovie == null && historyItem != null && historyItem.title.isNotBlank()) {
+                        val cleanTitle = SubdlTitleCleaner.clean(historyItem.title).title.ifBlank { historyItem.title }
+                        val searchResults = repository.search(cleanTitle)
+                        val matched = searchResults.firstOrNull {
+                            !targetContentId.isNullOrBlank() && it.id == targetContentId && it.slug.isNotBlank()
+                        } ?: searchResults.firstOrNull {
+                            it.title.equals(historyItem.title, ignoreCase = true) && it.slug.isNotBlank()
+                        } ?: searchResults.firstOrNull {
+                            it.title.equals(cleanTitle, ignoreCase = true) && it.slug.isNotBlank()
+                        } ?: searchResults.firstOrNull { it.slug.isNotBlank() }
+
+                        if (matched != null) {
+                            effectiveSlug = matched.slug
+                            rawMovie = repository.getMovieDetail(effectiveSlug)
+                        }
+                    }
+
+                    if (rawMovie != null) {
+                        val movie = rawMovie.copy(slug = rawMovie.slug.ifBlank { effectiveSlug })
+                        currentSlug = movie.slug
+
                         _uiState.value = _uiState.value.copy(
                             isLoadingDetail = false,
+                            detailError = null,
                             movie = movie,
                             series = null,
                             episodes = emptyList()
                         )
+
+                        if (shouldTriggerAutoPlay && !autoPlaybackStarted) {
+                            playMovie(movie)
+                        } else if (autoPlaybackStarted && movie.slug.isNotBlank()) {
+                            historyStore.recordStartPlayback(
+                                contentId = currentContentId,
+                                contentType = currentContentType,
+                                title = currentContentTitle,
+                                posterUrl = currentPosterUrl,
+                                backdropUrl = currentBackdropUrl,
+                                slug = movie.slug,
+                                seasonNumber = null,
+                                episodeNumber = null
+                            )
+                        }
+                    } else if (historyItem != null) {
+                        val fallbackMovie = MovieDetail(
+                            id = historyItem.contentId,
+                            title = historyItem.title,
+                            slug = effectiveSlug,
+                            posterPath = historyItem.posterUrl,
+                            backdropPath = historyItem.backdropUrl
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            isLoadingDetail = false,
+                            detailError = null,
+                            movie = fallbackMovie,
+                            series = null,
+                            episodes = emptyList()
+                        )
+                        if (shouldTriggerAutoPlay && !autoPlaybackStarted) {
+                            playMovie(fallbackMovie)
+                        }
                     } else {
                         _uiState.value = _uiState.value.copy(
                             isLoadingDetail = false,
@@ -179,7 +417,8 @@ class DetailViewModel(
 
             _uiState.value = _uiState.value.copy(selectedSeason = season)
             try {
-                val epRes = repository.getEpisodeDetail(series.slug, season.seasonNumber, 1)
+                val seriesSlug = series.slug.ifBlank { currentSlug ?: "" }
+                val epRes = repository.getEpisodeDetail(seriesSlug, season.seasonNumber, 1)
                 val newEpisodes = epRes?.season?.episodes ?: emptyList()
                 if (newEpisodes.isNotEmpty()) {
                     _uiState.value = _uiState.value.copy(
@@ -230,31 +469,37 @@ class DetailViewModel(
                 )
                 playEpisode(series, seasonNum, ep)
             }
+        } else if (currentContentId.isNotBlank()) {
+            retryPlayback()
         }
     }
 
     private fun playMovie(movie: MovieDetail) {
+        val effectiveSlug = movie.slug.ifBlank { currentSlug ?: "" }
         startStreamPlayback(
             contentType = "movie",
             contentId = movie.id,
             title = movie.title,
             posterUrl = movie.fullPosterUrl,
             backdropUrl = movie.fullBackdropUrl,
-            slug = movie.slug,
+            slug = effectiveSlug.takeIf { it.isNotBlank() },
             seasonNumber = null,
             episodeNumber = null
         )
     }
 
     private fun playEpisode(series: SeriesDetail, seasonNumber: Int, episode: EpisodeItem) {
-        val episodeTitle = "${series.title} - S${seasonNumber}E${episode.episodeNumber}: ${episode.name}"
+        val effectiveSlug = series.slug.ifBlank { currentSlug ?: "" }
+        val epLabel = "S${seasonNumber}E${episode.episodeNumber}: ${episode.name}"
+        val episodeTitle = "${series.title} - $epLabel"
         startStreamPlayback(
             contentType = "episode",
             contentId = episode.id,
             title = episodeTitle,
             posterUrl = episode.fullStillUrl.ifBlank { series.fullPosterUrl },
             backdropUrl = series.fullBackdropUrl,
-            slug = series.slug,
+            slug = effectiveSlug.takeIf { it.isNotBlank() },
+            episodeTitle = epLabel,
             seasonNumber = seasonNumber,
             episodeNumber = episode.episodeNumber
         )
@@ -269,6 +514,7 @@ class DetailViewModel(
                 posterUrl = currentPosterUrl,
                 backdropUrl = currentBackdropUrl,
                 slug = currentSlug,
+                episodeTitle = currentEpisodeTitle,
                 seasonNumber = currentSeasonNumber,
                 episodeNumber = currentEpisodeNumber
             )
@@ -282,12 +528,14 @@ class DetailViewModel(
         posterUrl: String? = null,
         backdropUrl: String? = null,
         slug: String? = null,
+        episodeTitle: String? = null,
         seasonNumber: Int? = null,
         episodeNumber: Int? = null
     ) {
         // Cancel in-flight playback and resolve jobs to prevent race conditions and double play
         playbackJob?.cancel()
         resolveNextEpisodeJob?.cancel()
+        resolveNextEpisodeJob = null
 
         currentContentId = contentId
         currentContentType = contentType
@@ -295,6 +543,7 @@ class DetailViewModel(
         currentPosterUrl = posterUrl
         currentBackdropUrl = backdropUrl
         currentSlug = slug
+        currentEpisodeTitle = episodeTitle
         currentSeasonNumber = seasonNumber
         currentEpisodeNumber = episodeNumber
 
@@ -307,6 +556,7 @@ class DetailViewModel(
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
             slug = slug,
+            episodeTitle = episodeTitle,
             seasonNumber = seasonNumber,
             episodeNumber = episodeNumber
         )

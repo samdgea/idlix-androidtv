@@ -90,6 +90,10 @@ fun DetailScreen(
     slug: String,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    autoPlay: Boolean = false,
+    resumeContentId: String? = null,
+    resumeSeasonNumber: Int? = null,
+    resumeEpisodeNumber: Int? = null,
     viewModel: DetailViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -102,8 +106,15 @@ fun DetailScreen(
     val activity = remember(context) { context.findActivity() }
 
     // Load media detail
-    LaunchedEffect(contentType, slug) {
-        viewModel.loadDetail(contentType, slug)
+    LaunchedEffect(contentType, slug, resumeContentId) {
+        viewModel.loadDetail(
+            contentType = contentType,
+            slug = slug,
+            autoPlay = autoPlay,
+            resumeContentId = resumeContentId,
+            resumeSeasonNumber = resumeSeasonNumber,
+            resumeEpisodeNumber = resumeEpisodeNumber
+        )
     }
 
     // Handle orientation & system bars for Fullscreen Mode
@@ -421,7 +432,11 @@ fun DetailScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .clickable {
                                             val shareTitle = context.getString(R.string.share)
-                                            val shareText = context.getString(R.string.share_movie_text, title, "https://idlixku.com/$contentType/$slug")
+                                            val shareType = if (uiState.series != null) "series" else "movie"
+                                            val shareSlug = uiState.series?.slug?.ifBlank { slug }
+                                                ?: uiState.movie?.slug?.ifBlank { slug }
+                                                ?: slug
+                                            val shareText = context.getString(R.string.share_movie_text, title, "https://idlixku.com/$shareType/$shareSlug")
                                             val sendIntent = Intent().apply {
                                                 action = Intent.ACTION_SEND
                                                 putExtra(Intent.EXTRA_TEXT, shareText)

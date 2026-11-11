@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.idlix.data.model.WatchHistoryItem
 import com.idlix.mobile.R
 import com.idlix.mobile.ui.components.ContinueWatchingCard
 import com.idlix.mobile.ui.theme.BackgroundDark
@@ -47,6 +48,10 @@ import com.idlix.mobile.ui.theme.TextWhite
 @Composable
 fun LibraryScreen(
     onNavigateToDetail: (contentType: String, slug: String) -> Unit,
+    onHistoryItemClick: (WatchHistoryItem) -> Unit = { item ->
+        val slug = item.slug?.takeIf { it.isNotBlank() } ?: item.contentId
+        onNavigateToDetail(item.contentType, slug)
+    },
     onNavigateToSettings: () -> Unit,
     viewModel: LibraryViewModel = viewModel()
 ) {
@@ -126,10 +131,9 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(uiState.historyItems, key = { it.contentId }) { item ->
-                    val slug = item.slug ?: item.contentId
                     ContinueWatchingCard(
                         item = item,
-                        onClick = { onNavigateToDetail(item.contentType, slug) },
+                        onClick = { onHistoryItemClick(item) },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

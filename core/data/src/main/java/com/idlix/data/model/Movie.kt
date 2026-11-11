@@ -29,10 +29,18 @@ data class MovieItem(
     val hasVideo: Boolean = true
 ) {
     val fullPosterUrl: String
-        get() = if (posterPath != null) "https://image.tmdb.org/t/p/w342$posterPath" else ""
+        get() = when {
+            posterPath.isNullOrBlank() -> ""
+            posterPath.startsWith("http") -> posterPath
+            else -> "https://image.tmdb.org/t/p/w342$posterPath"
+        }
 
     val fullBackdropUrl: String
-        get() = if (backdropPath != null) "https://image.tmdb.org/t/p/w1280$backdropPath" else ""
+        get() = when {
+            backdropPath.isNullOrBlank() -> ""
+            backdropPath.startsWith("http") -> backdropPath
+            else -> "https://image.tmdb.org/t/p/w1280$backdropPath"
+        }
 
     val formattedRating: String
         get() = voteAverage?.toDoubleOrNull()?.let { String.format("%.1f", it) } ?: "N/A"
@@ -63,10 +71,18 @@ data class MovieDetail(
     val trailerUrl: String? = null
 ) {
     val fullPosterUrl: String
-        get() = if (posterPath != null) "https://image.tmdb.org/t/p/w342$posterPath" else ""
+        get() = when {
+            posterPath.isNullOrBlank() -> ""
+            posterPath.startsWith("http") -> posterPath
+            else -> "https://image.tmdb.org/t/p/w342$posterPath"
+        }
 
     val fullBackdropUrl: String
-        get() = if (backdropPath != null) "https://image.tmdb.org/t/p/w1280$backdropPath" else ""
+        get() = when {
+            backdropPath.isNullOrBlank() -> ""
+            backdropPath.startsWith("http") -> backdropPath
+            else -> "https://image.tmdb.org/t/p/w1280$backdropPath"
+        }
 }
 
 @Serializable

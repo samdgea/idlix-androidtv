@@ -75,10 +75,18 @@ data class SeriesDetail(
     val defaultSeason: SeasonDetail? = null
 ) {
     val fullPosterUrl: String
-        get() = if (posterPath != null) "https://image.tmdb.org/t/p/w342$posterPath" else ""
+        get() = when {
+            posterPath.isNullOrBlank() -> ""
+            posterPath.startsWith("http") -> posterPath
+            else -> "https://image.tmdb.org/t/p/w342$posterPath"
+        }
 
     val fullBackdropUrl: String
-        get() = if (backdropPath != null) "https://image.tmdb.org/t/p/w1280$backdropPath" else ""
+        get() = when {
+            backdropPath.isNullOrBlank() -> ""
+            backdropPath.startsWith("http") -> backdropPath
+            else -> "https://image.tmdb.org/t/p/w1280$backdropPath"
+        }
 }
 
 @Serializable
@@ -92,7 +100,11 @@ data class Season(
     val episodeCount: Int = 0
 ) {
     val fullPosterUrl: String
-        get() = if (posterPath != null) "https://image.tmdb.org/t/p/w342$posterPath" else ""
+        get() = when {
+            posterPath.isNullOrBlank() -> ""
+            posterPath.startsWith("http") -> posterPath
+            else -> "https://image.tmdb.org/t/p/w342$posterPath"
+        }
 }
 
 @Serializable
@@ -121,7 +133,11 @@ data class EpisodeItem(
     val hasVideo: Boolean = true
 ) {
     val fullStillUrl: String
-        get() = if (stillPath != null) "https://image.tmdb.org/t/p/w500$stillPath" else ""
+        get() = when {
+            stillPath.isNullOrBlank() -> ""
+            stillPath.startsWith("http") -> stillPath
+            else -> "https://image.tmdb.org/t/p/w500$stillPath"
+        }
 }
 
 @Serializable

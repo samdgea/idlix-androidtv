@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.idlix.data.model.WatchHistoryItem
 import com.idlix.mobile.R
 import com.idlix.mobile.ui.components.ContinueWatchingSection
 import com.idlix.mobile.ui.components.HeroBannerPager
@@ -54,6 +55,10 @@ import com.idlix.mobile.ui.theme.TextWhite
 @Composable
 fun HomeScreen(
     onNavigateToDetail: (contentType: String, slug: String) -> Unit,
+    onContinueWatchingClick: (WatchHistoryItem) -> Unit = { item ->
+        val slug = item.slug?.takeIf { it.isNotBlank() } ?: item.contentId
+        onNavigateToDetail(item.contentType, slug)
+    },
     onNavigateToSettings: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
@@ -142,7 +147,7 @@ fun HomeScreen(
                 if (uiState.continueWatching.isNotEmpty()) {
                     ContinueWatchingSection(
                         items = uiState.continueWatching,
-                        onItemClick = { contentType, slug -> onNavigateToDetail(contentType, slug) }
+                        onItemClick = { item -> onContinueWatchingClick(item) }
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                 }
