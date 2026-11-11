@@ -291,12 +291,18 @@ export class IdlixScraperEngine {
       throw new Error('Failed to claim playback session from provider');
     }
 
-    // Step 4: Redeem HLS master playlist from Majorplay CDN
-    const redeemUrl = claimRes.redeemUrl || 'https://e2e.majorplay.net/api/play';
+    // Step 4: Redeem HLS master playlist from Majorplay CDN / Idlix session redeem
+    const rawRedeemUrl = claimRes.redeemUrl || '/api/watch/session/redeem';
+    const redeemUrl = rawRedeemUrl.startsWith('http')
+      ? rawRedeemUrl
+      : rawRedeemUrl.startsWith('/api/')
+      ? rawRedeemUrl
+      : `/api${rawRedeemUrl.startsWith('/') ? '' : '/'}${rawRedeemUrl}`;
     const redeemResp = await this.executeFetch(redeemUrl, {
       method: 'POST',
       body: { claim: claimRes.claim, mode: 'browser' },
       headers: {
+        ...(didCookie ? { Cookie: didCookie } : {}),
         Referer: `${this.baseUrl}/`,
         Origin: this.baseUrl,
       },

@@ -205,19 +205,27 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
     return reply.status(result.status).send(result.data);
   });
 
-  // Redeem Play (Majorplay CDN)
+  // Redeem Play (Majorplay CDN / Idlix Session Redeem)
   fastify.post<{ Body: { url?: string; claim: string; mode?: string } }>(
     '/api/watch/redeem',
     async (req, reply) => {
-      const { url = 'https://e2e.majorplay.net/api/play', claim, mode = 'browser' } = req.body;
+      const { url = '/api/watch/session/redeem', claim, mode = 'browser' } = req.body;
       if (!claim) {
         return reply.status(400).send({ error: 'claim is required' });
       }
 
-      const result = await engine.executeFetch(url, {
+      const normalizedUrl = url.startsWith('http')
+        ? url
+        : url.startsWith('/api/')
+        ? url
+        : `/api${url.startsWith('/') ? '' : '/'}${url}`;
+      const incomingCookie = (req.headers.cookie as string) || undefined;
+
+      const result = await engine.executeFetch(normalizedUrl, {
         method: 'POST',
         body: { claim, mode },
         headers: {
+          ...(incomingCookie ? { Cookie: incomingCookie } : {}),
           Referer: 'https://z2.idlixku.com/',
           Origin: 'https://z2.idlixku.com',
         },

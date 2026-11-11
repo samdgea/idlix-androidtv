@@ -78,6 +78,7 @@ object ApiClient {
         ignoreUnknownKeys = true
         coerceInputValues = true
         isLenient = true
+        encodeDefaults = true
     }
 
     @Volatile
@@ -155,7 +156,10 @@ object ApiClient {
 
         val builder = originalRequest.newBuilder()
             .header("Accept", "application/json, text/plain, */*")
-            .header("User-Agent", userAgentHeader)
+
+        if (originalRequest.header("User-Agent") == null) {
+            builder.header("User-Agent", userAgentHeader)
+        }
 
         if (originalRequest.header("Referer") == null) {
             builder.header("Referer", "$hostOrigin/")
