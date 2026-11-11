@@ -338,14 +338,21 @@ class IdlixRepository(
             }
 
             // Redeem final HLS playback URL
-            val redeemUrl = claimRes.redeemUrl.ifBlank { "https://e2e.majorplay.net/api/play" }
-            val redeemRes = try {
-                majorplayApi.redeemPlay(
-                    url = redeemUrl,
-                    request = RedeemRequest(claim = claimRes.claim, mode = "browser")
-                )
-            } catch (e: Exception) {
-                null
+            val redeemCandidates = buildRedeemCandidateUrls(claimRes.redeemUrl)
+            var redeemRes: com.idlix.data.model.RedeemResponse? = null
+            for (candidateUrl in redeemCandidates) {
+                try {
+                    val res = majorplayApi.redeemPlay(
+                        url = candidateUrl,
+                        cookie = didCookie,
+                        request = RedeemRequest(claim = claimRes.claim, mode = "browser")
+                    )
+                    if (res.url.isNotBlank()) {
+                        redeemRes = res
+                        break
+                    }
+                } catch (_: Exception) {
+                }
             }
 
             if (redeemRes == null || redeemRes.url.isBlank()) {
@@ -388,5 +395,47 @@ class IdlixRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    internal fun buildRedeemCandidateUrls(
+        rawRedeemUrl: String,
+        baseUrl: String = ApiClient.getBaseUrl()
+    ): List<String> {
+        val cleanBase = baseUrl.trim().trimEnd('/')
+        val trimmed = rawRedeemUrl.trim()
+        val candidates = LinkedHashSet<String>()
+
+        if (trimmed.isNotBlank()) {
+            when {
+                trimmed.startsWith("http://", ignoreCase = true) ||
+                    trimmed.startsWith("https://", ignoreCase = true) -> {
+                    if (trimmed.contains("idlix") &&
+                        trimmed.contains("/watch/") &&
+                        !trimmed.contains("/api/watch/")
+                    ) {
+                        candidates.add(trimmed.replaceFirst("/watch/", "/api/watch/"))
+                    }
+                    candidates.add(trimmed)
+                }
+                trimmed.startsWith("/api/") -> {
+                    candidates.add("$cleanBase$trimmed")
+                }
+                trimmed.startsWith("api/") -> {
+                    candidates.add("$cleanBase/$trimmed")
+                }
+                trimmed.startsWith("/") -> {
+                    candidates.add("$cleanBase/api$trimmed")
+                    candidates.add("$cleanBase$trimmed")
+                }
+                else -> {
+                    candidates.add("$cleanBase/api/$trimmed")
+                    candidates.add("$cleanBase/$trimmed")
+                }
+            }
+        }
+
+        candidates.add("$cleanBase/api/watch/session/redeem")
+        candidates.add("https://e2e.majorplay.net/api/play")
+        return candidates.toList()
     }
 }
