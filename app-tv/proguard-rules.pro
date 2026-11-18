@@ -32,3 +32,8 @@
 
 # Room
 -keep class * extends androidx.room.RoomDatabase
+
+# WebView JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

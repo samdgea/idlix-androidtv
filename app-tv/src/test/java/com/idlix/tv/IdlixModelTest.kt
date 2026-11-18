@@ -124,13 +124,15 @@ class IdlixModelTest {
           "unlockAt": 1792580295608,
           "viewerTier": "guest",
           "maxHeight": 720,
-          "preroll": {"ad": {"name": "GamblingAd"}}
+          "preroll": {"countdownSec": 7},
+          "verification": {"siteKey": "0x4AAAAAAB4OxS-c9fV6wteq", "action": "play"}
         }
         """.trimIndent()
 
         val playInfo = ApiClient.json.decodeFromString<PlayInfoResponse>(playInfoJson)
         assertEquals("sample_gate_jwt", playInfo.gateToken)
         assertEquals(1792580295608L, playInfo.unlockAt)
+        assertEquals("0x4AAAAAAB4OxS-c9fV6wteq", playInfo.verification?.siteKey)
 
         val claimJson = """
         {

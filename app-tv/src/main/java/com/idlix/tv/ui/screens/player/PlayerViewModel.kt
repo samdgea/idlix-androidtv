@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.idlix.data.local.WatchHistoryStore
 import com.idlix.data.model.EpisodeItem
+import com.idlix.data.model.PlaybackVerificationChallenge
 import com.idlix.data.model.ResolvedPlayback
 import com.idlix.data.model.Season
 import com.idlix.data.model.SubdlItem
@@ -15,6 +16,7 @@ import com.idlix.data.model.SubtitleTrack
 import com.idlix.data.repository.IdlixRepository
 import com.idlix.data.repository.SubdlRepository
 import com.idlix.data.util.SubdlTitleCleaner
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,7 +54,8 @@ data class PlayerUiState(
     val isUsingSessionOverride: Boolean = false,
     val isAppearancePanelOpen: Boolean = false,
     val nextEpisode: NextEpisodeInfo? = null,
-    val isNextEpisodeDismissed: Boolean = false
+    val isNextEpisodeDismissed: Boolean = false,
+    val verificationChallenge: PlaybackVerificationChallenge? = null
 )
 
 class PlayerViewModel(
@@ -73,6 +76,26 @@ class PlayerViewModel(
     private var currentSlug: String? = null
     private var currentSeasonNumber: Int? = null
     private var currentEpisodeNumber: Int? = null
+    private var loadStreamJob: Job? = null
+    private var pendingVerificationDeferred: CompletableDeferred<String?>? = null
+
+    fun submitVerificationToken(token: String) {
+        _uiState.value = _uiState.value.copy(verificationChallenge = null)
+        pendingVerificationDeferred?.complete(token)
+        pendingVerificationDeferred = null
+    }
+
+    fun cancelVerification() {
+        _uiState.value = _uiState.value.copy(verificationChallenge = null)
+        pendingVerificationDeferred?.complete(null)
+        pendingVerificationDeferred = null
+    }
+
+    override fun onCleared() {
+        pendingVerificationDeferred?.cancel()
+        pendingVerificationDeferred = null
+        super.onCleared()
+    }
 
     fun loadStream(
         contentType: String,
@@ -84,6 +107,10 @@ class PlayerViewModel(
         seasonNumber: Int? = null,
         episodeNumber: Int? = null
     ) {
+        loadStreamJob?.cancel()
+        pendingVerificationDeferred?.cancel()
+        pendingVerificationDeferred = null
+
         currentContentId = contentId
         currentContentType = contentType
         currentContentTitle = title
@@ -107,12 +134,13 @@ class PlayerViewModel(
             episodeNumber = episodeNumber
         )
 
-        viewModelScope.launch {
+        loadStreamJob = viewModelScope.launch {
             _uiState.value = PlayerUiState(
                 isLoading = true,
                 initialPositionMs = savedPos,
                 nextEpisode = null,
-                isNextEpisodeDismissed = false
+                isNextEpisodeDismissed = false,
+                verificationChallenge = null
             )
 
             // Asynchronously resolve the next episode in background for TV Series
@@ -134,6 +162,19 @@ class PlayerViewModel(
                 contentTitle = title,
                 onCountdown = { sec ->
                     _uiState.value = _uiState.value.copy(countdownSeconds = sec)
+                },
+                onVerificationRequired = { challenge ->
+                    val deferred = CompletableDeferred<String?>()
+                    pendingVerificationDeferred = deferred
+                    _uiState.value = _uiState.value.copy(verificationChallenge = challenge)
+                    try {
+                        deferred.await()
+                    } finally {
+                        if (pendingVerificationDeferred === deferred) {
+                            pendingVerificationDeferred = null
+                        }
+                        _uiState.value = _uiState.value.copy(verificationChallenge = null)
+                    }
                 }
             )
 

@@ -26,7 +26,7 @@ android {
         versionCode = 8
         versionName = "1.0.7"
 
-        val backendUrl = localProperties.getProperty("backendApiUrl") ?: "https://z2.idlixku.com/"
+        val backendUrl = localProperties.getProperty("backendApiUrl") ?: "https://z3.idlixku.com/"
         buildConfigField("String", "BACKEND_API_URL", "\"$backendUrl\"")
 
         vectorDrawables {

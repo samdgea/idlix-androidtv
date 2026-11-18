@@ -53,6 +53,9 @@
     <string name="loading_secure_stream">Memuat pemutaran aman...</string>
     <string name="starting_in_seconds">Memulai dalam %d detik</string>
     <string name="connecting_to_media">Menghubungkan ke server media...</string>
+    <string name="security_verification">Verifikasi Keamanan</string>
+    <string name="security_verification_desc">Selesaikan verifikasi keamanan di bawah untuk memulai pemutaran.</string>
+    <string name="verification_failed">Verifikasi gagal (%s). Silakan coba lagi.</string>
     <string name="failed_to_play">Gagal memuat video</string>
     <string name="try_again">Coba Lagi</string>
     <string name="back">Kembali</string>

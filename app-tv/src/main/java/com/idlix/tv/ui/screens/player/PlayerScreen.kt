@@ -1,9 +1,12 @@
 package com.idlix.tv.ui.screens.player
 
+import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import android.os.Looper
 import android.view.KeyEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -63,8 +66,11 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.idlix.data.api.ApiClient
 import com.idlix.data.local.PlayerAppearanceStore
 import com.idlix.player.ui.SubtitleOverlay
+import com.idlix.player.ui.TurnstileVerificationActivity
 import com.idlix.player.ui.rememberPlayerCues
 import com.idlix.tv.R
 import com.idlix.tv.ui.components.TvLoadingSpinner
@@ -207,6 +213,34 @@ fun PlayerScreen(
                 playButtonFocusRequester.requestFocus()
             } catch (e: Exception) {}
         }
+    }
+
+    val verificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val token = result.data?.getStringExtra(TurnstileVerificationActivity.EXTRA_TOKEN)
+        if (result.resultCode == Activity.RESULT_OK && !token.isNullOrBlank()) {
+            viewModel.submitVerificationToken(token)
+        } else {
+            viewModel.cancelVerification()
+        }
+    }
+
+    LaunchedEffect(uiState.verificationChallenge) {
+        val challenge = uiState.verificationChallenge ?: return@LaunchedEffect
+        verificationLauncher.launch(
+            TurnstileVerificationActivity.createIntent(
+                context = context,
+                siteKey = challenge.siteKey,
+                action = challenge.action,
+                originUrl = challenge.originUrl,
+                title = context.getString(R.string.security_verification),
+                desc = context.getString(R.string.security_verification_desc),
+                cancelLabel = context.getString(R.string.cancel),
+                retryLabel = context.getString(R.string.try_again),
+                failedFormat = context.getString(R.string.verification_failed)
+            )
+        )
     }
 
     Box(
@@ -375,12 +409,13 @@ fun PlayerScreen(
             }
 
             val httpDataSourceFactory = remember(tokenQuery) {
+                val origin = ApiClient.getOrigin()
                 val baseHttp = DefaultHttpDataSource.Factory()
                     .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
                     .setDefaultRequestProperties(
                         mapOf(
-                            "Referer" to "https://z2.idlixku.com/",
-                            "Origin" to "https://z2.idlixku.com"
+                            "Referer" to "$origin/",
+                            "Origin" to origin
                         )
                     )
                 QueryPreservingDataSourceFactory(baseHttp, tokenQuery)

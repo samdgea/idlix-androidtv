@@ -7,16 +7,18 @@ import com.idlix.data.model.GenreListResponse
 import com.idlix.data.model.MovieDetail
 import com.idlix.data.model.MovieListResponse
 import com.idlix.data.model.PlayInfoResponse
+import com.idlix.data.model.ResolvedPlayback
 import com.idlix.data.model.SearchResponse
 import com.idlix.data.model.SeriesDetail
 import com.idlix.data.model.SeriesListResponse
-import com.idlix.data.model.ResolvedPlayback
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Url
 
 interface IdlixApiService {
 
@@ -64,19 +66,21 @@ interface IdlixApiService {
     @GET("api/watch/play-info/movie/{id}")
     suspend fun getMoviePlayInfo(
         @Path("id") movieId: String
-    ): PlayInfoResponse
+    ): Response<PlayInfoResponse>
 
     @GET("api/watch/play-info/episode/{id}")
     suspend fun getEpisodePlayInfo(
         @Path("id") episodeId: String
-    ): PlayInfoResponse
+    ): Response<PlayInfoResponse>
 
-    @POST("api/watch/session/claim")
+    @POST
     suspend fun claimSession(
+        @Url url: String,
         @Body request: ClaimRequest,
         @Header("Cookie") cookie: String? = null,
-        @Header("Origin") origin: String = "https://z2.idlixku.com"
-    ): ClaimResponse
+        @Header("Origin") origin: String,
+        @Header("Referer") referer: String
+    ): Response<ClaimResponse>
 
     @GET("api/playback/resolve")
     suspend fun resolvePlayback(

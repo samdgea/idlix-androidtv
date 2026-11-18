@@ -177,8 +177,8 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
   );
 
   // Claim session
-  fastify.post<{ Body: { gateToken: string } }>('/api/watch/session/claim', async (req, reply) => {
-    const { gateToken } = req.body;
+  fastify.post<{ Body: { gateToken: string; verificationToken?: string } }>('/api/watch/session/claim', async (req, reply) => {
+    const { gateToken, verificationToken } = req.body;
     if (!gateToken) {
       return reply.status(400).send({ error: 'gateToken is required' });
     }
@@ -198,7 +198,7 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
 
     const result = await engine.executeFetch('/api/watch/session/claim', {
       method: 'POST',
-      body: { gateToken },
+      body: { gateToken, ...(verificationToken ? { verificationToken } : {}) },
       headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
     });
 
@@ -220,14 +220,15 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
         ? url
         : `/api${url.startsWith('/') ? '' : '/'}${url}`;
       const incomingCookie = (req.headers.cookie as string) || undefined;
+      const targetOrigin = process.env.IDLIX_BASE_URL || 'https://z3.idlixku.com';
 
       const result = await engine.executeFetch(normalizedUrl, {
         method: 'POST',
         body: { claim, mode },
         headers: {
           ...(incomingCookie ? { Cookie: incomingCookie } : {}),
-          Referer: 'https://z2.idlixku.com/',
-          Origin: 'https://z2.idlixku.com',
+          Referer: `${targetOrigin}/`,
+          Origin: targetOrigin,
         },
       });
 

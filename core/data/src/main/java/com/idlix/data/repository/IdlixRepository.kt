@@ -3,13 +3,16 @@ package com.idlix.data.repository
 import com.idlix.data.api.ApiClient
 import com.idlix.data.api.IdlixApiService
 import com.idlix.data.api.MajorplayApiService
+import com.idlix.data.model.ApiErrorResponse
 import com.idlix.data.model.ClaimRequest
+import com.idlix.data.model.ClaimResponse
 import com.idlix.data.model.EpisodeResponse
 import com.idlix.data.model.Genre
 import com.idlix.data.model.MovieDetail
 import com.idlix.data.model.MovieItem
 import com.idlix.data.model.MovieListResponse
 import com.idlix.data.model.PlayInfoResponse
+import com.idlix.data.model.PlaybackVerificationChallenge
 import com.idlix.data.model.RedeemRequest
 import com.idlix.data.model.ResolvedPlayback
 import com.idlix.data.model.SearchResultItem
@@ -23,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import java.util.concurrent.ConcurrentHashMap
 
 class IdlixRepository(
@@ -197,7 +201,8 @@ class IdlixRepository(
         contentType: String,
         contentId: String,
         contentTitle: String,
-        onCountdown: ((Int) -> Unit)? = null
+        onCountdown: ((Int) -> Unit)? = null,
+        onVerificationRequired: (suspend (PlaybackVerificationChallenge) -> String?)? = null
     ): Result<ResolvedPlayback> = withContext(Dispatchers.IO) {
         val cacheKey = "$contentType:$contentId"
 
@@ -217,10 +222,16 @@ class IdlixRepository(
                     onCountdown?.invoke(0)
                     return@withContext res
                 }
-            } catch (e: Exception) {}
+            } catch (_: Exception) {}
         }
 
-        val res = resolveStreamInternal(contentType, contentId, contentTitle, onCountdown)
+        val res = resolveStreamInternal(
+            contentType = contentType,
+            contentId = contentId,
+            contentTitle = contentTitle,
+            onCountdown = onCountdown,
+            onVerificationRequired = onVerificationRequired
+        )
         res.onSuccess { resolved ->
             playbackCache[cacheKey] = CachedPlayback(resolved)
         }
@@ -231,7 +242,8 @@ class IdlixRepository(
         contentType: String,
         contentId: String,
         contentTitle: String,
-        onCountdown: ((Int) -> Unit)? = null
+        onCountdown: ((Int) -> Unit)? = null,
+        onVerificationRequired: (suspend (PlaybackVerificationChallenge) -> String?)? = null
     ): Result<ResolvedPlayback> = withContext(Dispatchers.IO) {
         try {
             var targetType = contentType
@@ -269,16 +281,27 @@ class IdlixRepository(
                 }
             }
 
-            // Fetch gate token and unlock schedule
-            val playInfo: PlayInfoResponse = if (targetType == "episode") {
+            // Fetch gate token, unlock schedule, and final resolved origin (handles 301 mirror redirects)
+            val playInfoResp = if (targetType == "episode") {
                 idlixApi.getEpisodePlayInfo(targetId)
             } else {
                 idlixApi.getMoviePlayInfo(targetId)
             }
 
+            if (!playInfoResp.isSuccessful) {
+                val err = parseApiError(playInfoResp.errorBody()?.string())
+                val msg = err?.error?.ifBlank { null } ?: "Gagal memperoleh info pemutaran (HTTP ${playInfoResp.code()})"
+                return@withContext Result.failure(Exception(msg))
+            }
+
+            val playInfo: PlayInfoResponse = playInfoResp.body()
+                ?: return@withContext Result.failure(Exception("Gagal memperoleh token pemutaran"))
+
             if (playInfo.gateToken.isBlank()) {
                 return@withContext Result.failure(Exception("Gagal memperoleh token pemutaran"))
             }
+
+            val resolvedOrigin = extractOriginFromPlayInfo(playInfoResp.raw().request.url)
 
             // Server-synchronized countdown until gate unlocks
             val diffMs = if (playInfo.serverNow > 0 && playInfo.unlockAt > playInfo.serverNow) {
@@ -287,20 +310,7 @@ class IdlixRepository(
                 15000L
             }
 
-            // Resolve session device ID (fallback to ApiClient device ID if gateToken v2 does not expose owner)
-            val didFromToken = try {
-                val rawP0 = playInfo.gateToken.split(".")[0]
-                val decodedBytes = try {
-                    java.util.Base64.getUrlDecoder().decode(rawP0)
-                } catch (e: Throwable) {
-                    android.util.Base64.decode(rawP0, android.util.Base64.URL_SAFE)
-                }
-                val p0 = String(decodedBytes, Charsets.UTF_8)
-                """"owner":"d:([^"]+)"""".toRegex().find(p0)?.groupValues?.get(1)
-            } catch (e: Exception) {
-                null
-            }
-            val activeDid = if (!didFromToken.isNullOrBlank()) didFromToken else ApiClient.getDeviceId()
+            val activeDid = extractDidFromGateToken(playInfo.gateToken) ?: ApiClient.getDeviceId()
             val didCookie = "did=$activeDid"
 
             var secondsLeft = (diffMs / 1000).toInt()
@@ -311,40 +321,137 @@ class IdlixRepository(
             }
             if (secondsLeft > 0) {
                 onCountdown?.invoke(1)
+                delay(1000)
+            }
+            onCountdown?.invoke(0)
+
+            var verificationToken: String? = null
+            var verificationPrompts = 0
+            val gateVerification = playInfo.verification
+            if (gateVerification != null && gateVerification.siteKey.isNotBlank()) {
+                if (onVerificationRequired == null) {
+                    return@withContext Result.failure(Exception("Verifikasi keamanan diperlukan."))
+                }
+                verificationPrompts++
+                verificationToken = onVerificationRequired.invoke(
+                    PlaybackVerificationChallenge(
+                        siteKey = gateVerification.siteKey,
+                        action = gateVerification.action.ifBlank { "play" },
+                        originUrl = "$resolvedOrigin/"
+                    )
+                )
+                if (verificationToken.isNullOrBlank()) {
+                    return@withContext Result.failure(Exception("Verifikasi keamanan dibatalkan."))
+                }
             }
 
-            // Poll session claim until unlocked
-            var validClaimRes: com.idlix.data.model.ClaimResponse? = null
+            // Poll session claim against the resolved origin so POST never hits a 301 POST->GET redirect
+            val claimUrl = "$resolvedOrigin/api/watch/session/claim"
+            var validClaimRes: ClaimResponse? = null
+            var transientFailures = 0
 
-            for (attempt in 1..15) {
-                try {
-                    val res = idlixApi.claimSession(
-                        request = ClaimRequest(gateToken = playInfo.gateToken),
-                        cookie = didCookie
+            for (attempt in 1..12) {
+                val claimResp = try {
+                    idlixApi.claimSession(
+                        url = claimUrl,
+                        request = ClaimRequest(
+                            gateToken = playInfo.gateToken,
+                            verificationToken = verificationToken
+                        ),
+                        cookie = didCookie,
+                        origin = resolvedOrigin,
+                        referer = "$resolvedOrigin/"
                     )
-                    if (res.kind == "pentos" && res.claim.isNotBlank()) {
+                } catch (e: Exception) {
+                    transientFailures++
+                    if (transientFailures >= 3) {
+                        return@withContext Result.failure(
+                            Exception("Gagal menghubungi server klaim pemutaran: ${e.localizedMessage ?: "Network error"}")
+                        )
+                    }
+                    delay(600)
+                    continue
+                }
+
+                if (claimResp.isSuccessful) {
+                    val res = claimResp.body()
+                    if (res != null && res.kind == "pentos" && res.claim.isNotBlank()) {
                         validClaimRes = res
                         break
                     }
-                } catch (_: Exception) {}
+                    if (res != null && res.kind == "pending") {
+                        val waitMs = (res.remainingMs + 125L).coerceIn(250L, 5000L)
+                        delay(waitMs)
+                        continue
+                    }
+                    delay(600)
+                    continue
+                }
+
+                val err = parseApiError(claimResp.errorBody()?.string())
+                when (err?.code) {
+                    "VERIFICATION_REQUIRED" -> {
+                        verificationToken = null
+                        val siteKey = playInfo.verification?.siteKey?.takeIf { it.isNotBlank() }
+                            ?: err.siteKey.orEmpty()
+                        if (siteKey.isNotBlank() && onVerificationRequired != null && verificationPrompts < 2) {
+                            verificationPrompts++
+                            verificationToken = onVerificationRequired.invoke(
+                                PlaybackVerificationChallenge(
+                                    siteKey = siteKey,
+                                    action = playInfo.verification?.action?.ifBlank { "play" } ?: "play",
+                                    originUrl = "$resolvedOrigin/"
+                                )
+                            )
+                            if (verificationToken.isNullOrBlank()) {
+                                return@withContext Result.failure(Exception("Verifikasi keamanan dibatalkan."))
+                            }
+                            continue
+                        }
+                        return@withContext Result.failure(
+                            Exception(err.error.ifBlank { "Verifikasi keamanan diperlukan untuk memutar video." })
+                        )
+                    }
+                    "VERIFICATION_UNAVAILABLE" -> {
+                        return@withContext Result.failure(
+                            Exception(err.error.ifBlank { "Verifikasi pemutaran sedang tidak tersedia. Silakan coba lagi." })
+                        )
+                    }
+                    "PLAYBACK_TITLE_LIMIT" -> {
+                        return@withContext Result.failure(Exception(formatLimitError(err)))
+                    }
+                }
+
+                val code = claimResp.code()
+                if (code in 400..499 && code != 429) {
+                    val msg = err?.error?.ifBlank { null } ?: "Gagal mengklaim sesi pemutaran (HTTP $code)."
+                    return@withContext Result.failure(Exception(msg))
+                }
+
+                transientFailures++
+                if (transientFailures >= 4) {
+                    val msg = err?.error?.ifBlank { null } ?: "Gagal mengklaim sesi pemutaran (HTTP $code)."
+                    return@withContext Result.failure(Exception(msg))
+                }
                 delay(600)
             }
-
-            onCountdown?.invoke(0)
 
             val claimRes = validClaimRes
             if (claimRes == null || claimRes.claim.isBlank()) {
                 return@withContext Result.failure(Exception("Gagal mengklaim sesi pemutaran. Silakan coba lagi."))
             }
 
-            // Redeem final HLS playback URL
-            val redeemCandidates = buildRedeemCandidateUrls(claimRes.redeemUrl)
+            // Redeem final HLS playback URL using the resolved origin
+            val redeemCandidates = buildRedeemCandidateUrls(claimRes.redeemUrl, baseUrl = resolvedOrigin)
             var redeemRes: com.idlix.data.model.RedeemResponse? = null
             for (candidateUrl in redeemCandidates) {
                 try {
+                    val includeDidCookie = candidateUrl.startsWith(resolvedOrigin) || candidateUrl.contains("idlix")
                     val res = majorplayApi.redeemPlay(
                         url = candidateUrl,
-                        cookie = didCookie,
+                        cookie = if (includeDidCookie) didCookie else null,
+                        referer = "$resolvedOrigin/",
+                        origin = resolvedOrigin,
                         request = RedeemRequest(claim = claimRes.claim, mode = "browser")
                     )
                     if (res.url.isNotBlank()) {
@@ -437,5 +544,46 @@ class IdlixRepository(
         candidates.add("$cleanBase/api/watch/session/redeem")
         candidates.add("https://e2e.majorplay.net/api/play")
         return candidates.toList()
+    }
+
+    private fun extractOriginFromPlayInfo(url: HttpUrl): String {
+        val defaultPort = if (url.scheme == "https") 443 else 80
+        val portSuffix = if (url.port != defaultPort) ":${url.port}" else ""
+        return "${url.scheme}://${url.host}$portSuffix"
+    }
+
+    private fun extractDidFromGateToken(gateToken: String): String? {
+        return try {
+            val rawP0 = gateToken.split(".")[0]
+            val decodedBytes = try {
+                java.util.Base64.getUrlDecoder().decode(rawP0)
+            } catch (_: Throwable) {
+                android.util.Base64.decode(rawP0, android.util.Base64.URL_SAFE)
+            }
+            val p0 = String(decodedBytes, Charsets.UTF_8)
+            """"owner":"d:([^"]+)"""".toRegex().find(p0)?.groupValues?.get(1)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseApiError(rawBody: String?): ApiErrorResponse? {
+        if (rawBody.isNullOrBlank()) return null
+        return try {
+            ApiClient.json.decodeFromString<ApiErrorResponse>(rawBody)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun formatLimitError(err: ApiErrorResponse): String {
+        if (err.error.isNotBlank()) return err.error
+        val waitSec = err.retryAfter ?: 60L
+        return when (err.scope) {
+            "guest" -> "Batas tontonan tamu tercapai. Coba lagi dalam ${waitSec}d."
+            "network" -> "Batas pemutaran jaringan tercapai. Coba lagi dalam ${waitSec}d."
+            "account_daily" -> "Batas pemutaran harian akun tercapai."
+            else -> "Batas pemutaran tercapai. Silakan coba lagi nanti."
+        }
     }
 }

@@ -53,6 +53,9 @@
     <string name="loading_secure_stream">Loading secure stream...</string>
     <string name="starting_in_seconds">Starting in %d seconds</string>
     <string name="connecting_to_media">Connecting to media server...</string>
+    <string name="security_verification">Security Verification</string>
+    <string name="security_verification_desc">Complete the security check below to start playback.</string>
+    <string name="verification_failed">Verification failed (%s). Please try again.</string>
     <string name="failed_to_play">Failed to play video</string>
     <string name="try_again">Try Again</string>
     <string name="back">Back</string>

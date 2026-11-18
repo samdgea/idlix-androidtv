@@ -14,7 +14,7 @@ export class IdlixScraperEngine {
   private page: any = null;
   private isReady = false;
   private initPromise: Promise<void> | null = null;
-  private baseUrl = process.env.IDLIX_BASE_URL || 'https://z2.idlixku.com';
+  private baseUrl = process.env.IDLIX_BASE_URL || 'https://z3.idlixku.com';
 
   private constructor() {}
 

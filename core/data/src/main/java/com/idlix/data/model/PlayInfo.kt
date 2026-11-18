@@ -3,18 +3,32 @@ package com.idlix.data.model
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class PlaybackVerification(
+    val siteKey: String = "",
+    val action: String = "play"
+)
+
+@Serializable
+data class PrerollInfo(
+    val countdownSec: Int = 0
+)
+
+@Serializable
 data class PlayInfoResponse(
     val kind: String = "",
     val gateToken: String = "",
     val serverNow: Long = 0L,
     val unlockAt: Long = 0L,
     val viewerTier: String = "guest",
-    val maxHeight: Int = 720
+    val maxHeight: Int = 720,
+    val preroll: PrerollInfo? = null,
+    val verification: PlaybackVerification? = null
 )
 
 @Serializable
 data class ClaimRequest(
-    val gateToken: String
+    val gateToken: String,
+    val verificationToken: String? = null
 )
 
 @Serializable
@@ -28,7 +42,28 @@ data class ClaimResponse(
     val durationSec: Long = 0L,
     val viewerTier: String = "guest",
     val maxHeight: Int = 720,
-    val qualityLadder: List<Int> = emptyList()
+    val qualityLadder: List<Int> = emptyList(),
+    val serverNow: Long = 0L,
+    val unlockAt: Long = 0L,
+    val remainingMs: Long = 0L,
+    val renewalToken: String = "",
+    val progressToken: String = "",
+    val playbackSessionId: String = ""
+)
+
+@Serializable
+data class ApiErrorResponse(
+    val error: String = "",
+    val code: String = "",
+    val scope: String? = null,
+    val retryAfter: Long? = null,
+    val siteKey: String? = null
+)
+
+data class PlaybackVerificationChallenge(
+    val siteKey: String,
+    val action: String = "play",
+    val originUrl: String
 )
 
 @Serializable

@@ -11,3 +11,8 @@
 
 # Coil
 -keep class coil.** { *; }
+
+# WebView JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

@@ -13,8 +13,8 @@ interface MajorplayApiService {
     suspend fun redeemPlay(
         @Url url: String,
         @Header("Cookie") cookie: String? = null,
-        @Header("Referer") referer: String = "https://z2.idlixku.com/",
-        @Header("Origin") origin: String = "https://z2.idlixku.com",
+        @Header("Referer") referer: String = "${ApiClient.getOrigin()}/",
+        @Header("Origin") origin: String = ApiClient.getOrigin(),
         @Body request: RedeemRequest
     ): RedeemResponse
 }

@@ -34,8 +34,8 @@ object OfflineDownloadManager {
     private const val MAX_SEGMENT_RETRIES = 3
     private const val USER_AGENT =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    private const val REFERER = "https://z2.idlixku.com/"
-    private const val ORIGIN = "https://z2.idlixku.com"
+    private val REFERER: String get() = "${ApiClient.getOrigin()}/"
+    private val ORIGIN: String get() = ApiClient.getOrigin()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()

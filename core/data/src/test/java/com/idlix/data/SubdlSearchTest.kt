@@ -54,14 +54,14 @@ class SubdlSearchTest {
     @Test
     fun testBuildRedeemCandidateUrls() {
         val repo = com.idlix.data.repository.IdlixRepository()
-        val urls1 = repo.buildRedeemCandidateUrls("/watch/session/redeem", "https://z2.idlixku.com/")
-        assertEquals("https://z2.idlixku.com/api/watch/session/redeem", urls1.first())
+        val urls1 = repo.buildRedeemCandidateUrls("/watch/session/redeem", "https://z3.idlixku.com/")
+        assertEquals("https://z3.idlixku.com/api/watch/session/redeem", urls1.first())
 
-        val urls2 = repo.buildRedeemCandidateUrls("/api/watch/session/redeem", "https://z2.idlixku.com/")
-        assertEquals("https://z2.idlixku.com/api/watch/session/redeem", urls2.first())
+        val urls2 = repo.buildRedeemCandidateUrls("/api/watch/session/redeem", "https://z3.idlixku.com/")
+        assertEquals("https://z3.idlixku.com/api/watch/session/redeem", urls2.first())
 
-        val urls3 = repo.buildRedeemCandidateUrls("", "https://z2.idlixku.com/")
-        assertEquals("https://z2.idlixku.com/api/watch/session/redeem", urls3.first())
+        val urls3 = repo.buildRedeemCandidateUrls("", "https://z3.idlixku.com/")
+        assertEquals("https://z3.idlixku.com/api/watch/session/redeem", urls3.first())
     }
 }
 

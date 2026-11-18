@@ -5,6 +5,7 @@ import com.idlix.data.BuildConfig
 import com.idlix.data.model.MovieListResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import okhttp3.Cache
 import okhttp3.Dns
@@ -74,17 +75,30 @@ object ApiClient {
         }
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
         isLenient = true
         encodeDefaults = true
+        explicitNulls = false
     }
 
     @Volatile
     private var currentBaseUrl: String? = null
 
     fun getDefaultUrl(): String = if (DEFAULT_URL.endsWith("/")) DEFAULT_URL else "$DEFAULT_URL/"
+
+    fun getOrigin(): String {
+        return try {
+            val httpUrl = getBaseUrl().toHttpUrl()
+            val defaultPort = if (httpUrl.scheme == "https") 443 else 80
+            val portSuffix = if (httpUrl.port != defaultPort) ":${httpUrl.port}" else ""
+            "${httpUrl.scheme}://${httpUrl.host}$portSuffix"
+        } catch (_: Exception) {
+            "https://z3.idlixku.com"
+        }
+    }
 
     fun getBaseUrl(): String {
         currentBaseUrl?.let { return it }
@@ -390,7 +404,11 @@ object ApiClient {
 
     suspend fun testDns(provider: String = getDnsProvider()): Result<String> = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
-        val testHost = "z2.idlixku.com"
+        val testHost = try {
+            getBaseUrl().toHttpUrl().host
+        } catch (_: Exception) {
+            "z3.idlixku.com"
+        }
         try {
             val addresses = when (provider.lowercase()) {
                 DNS_PROVIDER_SYSTEM -> Dns.SYSTEM.lookup(testHost)
