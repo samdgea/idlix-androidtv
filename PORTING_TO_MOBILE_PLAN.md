@@ -299,7 +299,7 @@ android {
     defaultConfig {
         minSdk = 24
         
-        val backendUrl = "https://z2.idlixku.com/"
+        val backendUrl = "https://z3.idlixku.com/"
         buildConfigField("String", "BACKEND_API_URL", "\"$backendUrl\"")
     }
 

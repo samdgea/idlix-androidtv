@@ -1,12 +1,17 @@
 package com.idlix.data.api
 
 import android.content.Context
+import android.os.Build
 import com.idlix.data.BuildConfig
+import com.idlix.data.local.AuthSessionStore
+import com.idlix.data.local.PersistentCookieJar
+import com.idlix.data.model.ApiErrorResponse
 import com.idlix.data.model.MovieListResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import okhttp3.Authenticator
 import okhttp3.Cache
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -14,6 +19,9 @@ import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.Route
 import okhttp3.dnsoverhttps.DnsOverHttps
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -22,6 +30,7 @@ import java.io.File
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.UnknownHostException
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -29,7 +38,12 @@ object ApiClient {
 
     private const val PREF_KEY_SERVER_URL = "custom_backend_url"
     private const val PREF_KEY_DEVICE_ID = "device_session_id"
+    private const val PREF_KEY_REFRESH_RECOVERY = "auth_refresh_recovery"
+    private const val CLIENT_VERSION_HEADER_VALUE = "1.9.0"
     private const val DEFAULT_URL = BuildConfig.BACKEND_API_URL
+
+    val cookieJar = PersistentCookieJar()
+    private val refreshLock = Any()
 
     @Volatile
     var applicationContext: Context? = null
@@ -41,11 +55,17 @@ object ApiClient {
     @Volatile
     private var cachedDeviceId: String? = null
 
+    @Volatile
+    private var cachedRefreshRecovery: String? = null
+
     fun init(context: Context, userAgent: String? = null) {
-        this.applicationContext = context.applicationContext
+        val appContext = context.applicationContext
+        this.applicationContext = appContext
         if (!userAgent.isNullOrBlank()) {
             this.userAgentHeader = userAgent
         }
+        cookieJar.init(appContext)
+        AuthSessionStore.init(appContext)
     }
 
     fun getDeviceId(): String {
@@ -73,6 +93,36 @@ object ApiClient {
                 prefs?.edit()?.putString(PREF_KEY_DEVICE_ID, trimmed)?.apply()
             } catch (_: Exception) {}
         }
+    }
+
+    fun getClientFingerprint(): String {
+        val brand = try { Build.BRAND.orEmpty() } catch (_: Throwable) { "" }
+        val model = try { Build.MODEL.orEmpty() } catch (_: Throwable) { "" }
+        val device = try { Build.DEVICE.orEmpty() } catch (_: Throwable) { "" }
+        val raw = "${getDeviceId()}|$brand|$model|$device"
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+            digest.joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            getDeviceId().padEnd(64, '0').take(64)
+        }
+    }
+
+    fun getRefreshRecoveryToken(): String {
+        cachedRefreshRecovery?.let { return it }
+        val prefs = applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
+        val saved = prefs?.getString(PREF_KEY_REFRESH_RECOVERY, null)?.trim()
+        if (!saved.isNullOrBlank() && saved.length in 32..128) {
+            cachedRefreshRecovery = saved
+            return saved
+        }
+        val generated = java.util.UUID.randomUUID().toString().replace("-", "") +
+            java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+        cachedRefreshRecovery = generated
+        try {
+            prefs?.edit()?.putString(PREF_KEY_REFRESH_RECOVERY, generated)?.apply()
+        } catch (_: Exception) {}
+        return generated
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -166,7 +216,9 @@ object ApiClient {
 
     private val headerInterceptor = Interceptor { chain ->
         val originalRequest = chain.request()
-        val hostOrigin = "${originalRequest.url.scheme}://${originalRequest.url.host}"
+        val defaultPort = if (originalRequest.url.scheme == "https") 443 else 80
+        val portSuffix = if (originalRequest.url.port != defaultPort) ":${originalRequest.url.port}" else ""
+        val hostOrigin = "${originalRequest.url.scheme}://${originalRequest.url.host}$portSuffix"
 
         val builder = originalRequest.newBuilder()
             .header("Accept", "application/json, text/plain, */*")
@@ -182,17 +234,20 @@ object ApiClient {
             builder.header("Origin", hostOrigin)
         }
 
-        // Attach persistent device session cookie (did) for Idlix endpoints
         val host = originalRequest.url.host
         val path = originalRequest.url.encodedPath
-        if (host.contains("idlix") || path.contains("/api/watch/") || path.contains("/api/playback/")) {
-            val deviceId = getDeviceId()
-            val existingCookie = originalRequest.header("Cookie")
-            if (existingCookie == null) {
-                builder.header("Cookie", "did=$deviceId")
-            } else if (!existingCookie.contains("did=")) {
-                builder.header("Cookie", "$existingCookie; did=$deviceId")
-            }
+        if (path.contains("/api/auth/") && originalRequest.header("X-Client-Version") == null) {
+            builder.header("X-Client-Version", CLIENT_VERSION_HEADER_VALUE)
+        }
+        if ((path.endsWith("/api/auth/login") || path.endsWith("/api/auth/register")) &&
+            originalRequest.header("X-Client-Fp") == null
+        ) {
+            builder.header("X-Client-Fp", getClientFingerprint())
+        }
+
+        // Seed persistent device session cookie (did) into CookieJar so BridgeInterceptor merges it with auth cookies
+        if (host.contains("idlix") || path.contains("/api/watch/") || path.contains("/api/playback/") || path.contains("/api/auth/")) {
+            cookieJar.ensureCookieIfMissing(originalRequest.url, "did", getDeviceId())
         }
 
         val response = chain.proceed(builder.build())
@@ -205,11 +260,104 @@ object ApiClient {
                 val serverDid = match.groupValues[1]
                 if (serverDid.isNotBlank()) {
                     setDeviceId(serverDid)
+                    cookieJar.upsertCookie(originalRequest.url, "did", serverDid)
                 }
             }
         }
 
         response
+    }
+
+    private val authRefreshHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .dns(dynamicDns)
+            .cookieJar(cookieJar)
+            .addInterceptor(headerInterceptor)
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            })
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private val tokenAuthenticator = Authenticator { _: Route?, response: Response ->
+        val req = response.request
+        val path = req.url.encodedPath
+        if (req.header("X-Auth-Retried") == "1" ||
+            path.endsWith("/api/auth/login") ||
+            path.endsWith("/api/auth/register") ||
+            path.endsWith("/api/auth/refresh") ||
+            path.endsWith("/api/auth/logout")
+        ) {
+            return@Authenticator null
+        }
+
+        if (!cookieJar.hasAuthCookies(req.url) && !AuthSessionStore.isAuthenticated()) {
+            return@Authenticator null
+        }
+
+        val beforeSnapshot = cookieJar.cookieSnapshotForUrl(req.url)
+        synchronized(refreshLock) {
+            val currentSnapshot = cookieJar.cookieSnapshotForUrl(req.url)
+            if (currentSnapshot != beforeSnapshot && cookieJar.hasAuthCookies(req.url)) {
+                return@synchronized req.newBuilder()
+                    .header("X-Auth-Retried", "1")
+                    .build()
+            }
+
+            val defaultPort = if (req.url.scheme == "https") 443 else 80
+            val portSuffix = if (req.url.port != defaultPort) ":${req.url.port}" else ""
+            val targetOrigin = "${req.url.scheme}://${req.url.host}$portSuffix"
+            val refreshUrl = "$targetOrigin/api/auth/refresh?bootstrap=0"
+
+            val refreshReq = Request.Builder()
+                .url(refreshUrl)
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .header("X-Client-Version", CLIENT_VERSION_HEADER_VALUE)
+                .header("X-Refresh-Recovery", getRefreshRecoveryToken())
+                .build()
+
+            try {
+                authRefreshHttpClient.newCall(refreshReq).execute().use { refreshResp ->
+                    val rawBody = refreshResp.body?.string().orEmpty()
+                    if (refreshResp.isSuccessful) {
+                        return@synchronized req.newBuilder()
+                            .header("X-Auth-Retried", "1")
+                            .build()
+                    }
+                    val err = try {
+                        json.decodeFromString<ApiErrorResponse>(rawBody)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (refreshResp.code == 409 && err?.code == "REFRESH_RACE") {
+                        try {
+                            Thread.sleep(150L)
+                        } catch (_: InterruptedException) {}
+                        val meReq = Request.Builder()
+                            .url("$targetOrigin/api/auth/me")
+                            .get()
+                            .header("X-Client-Version", CLIENT_VERSION_HEADER_VALUE)
+                            .build()
+                        authRefreshHttpClient.newCall(meReq).execute().use { meResp ->
+                            if (meResp.isSuccessful) {
+                                return@synchronized req.newBuilder()
+                                    .header("X-Auth-Retried", "1")
+                                    .build()
+                            }
+                        }
+                    }
+                    if (refreshResp.code == 401) {
+                        cookieJar.clearAuthCookies()
+                        AuthSessionStore.setGuest()
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            null
+        }
     }
 
     const val DNS_PROVIDER_GOOGLE = "google"
@@ -433,6 +581,8 @@ object ApiClient {
     val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .dns(dynamicDns)
+            .cookieJar(cookieJar)
+            .authenticator(tokenAuthenticator)
             .addInterceptor(headerInterceptor)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC

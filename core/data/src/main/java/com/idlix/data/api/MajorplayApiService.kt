@@ -12,7 +12,6 @@ interface MajorplayApiService {
     @POST
     suspend fun redeemPlay(
         @Url url: String,
-        @Header("Cookie") cookie: String? = null,
         @Header("Referer") referer: String = "${ApiClient.getOrigin()}/",
         @Header("Origin") origin: String = ApiClient.getOrigin(),
         @Body request: RedeemRequest

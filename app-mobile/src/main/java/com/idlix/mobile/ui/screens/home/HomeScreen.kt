@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -36,12 +37,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.idlix.data.local.AuthSessionStore
+import com.idlix.data.model.AuthState
 import com.idlix.data.model.WatchHistoryItem
 import com.idlix.mobile.R
 import com.idlix.mobile.ui.components.ContinueWatchingSection
@@ -62,10 +66,12 @@ fun HomeScreen(
         onNavigateToDetail(item.contentType, slug)
     },
     onNavigateToSettings: () -> Unit,
+    onNavigateToAccount: () -> Unit = {},
     onOpenOfflineDownloads: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val authState by AuthSessionStore.authState.collectAsState()
 
     PullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
@@ -146,12 +152,22 @@ fun HomeScreen(
                         modifier = Modifier.height(28.dp)
                     )
 
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = stringResource(R.string.settings),
-                            tint = TextWhite
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onNavigateToAccount) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = stringResource(R.string.account),
+                                tint = if (authState is AuthState.Authenticated) Color(0xFF4CAF50) else TextWhite
+                            )
+                        }
+
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = stringResource(R.string.settings),
+                                tint = TextWhite
+                            )
+                        }
                     }
                 }
 

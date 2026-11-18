@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.idlix.data.repository.AuthRepository
 import com.idlix.data.update.AppPlatform
 import com.idlix.data.update.AppUpdateManager
 import com.idlix.data.update.AppUpdateState
@@ -36,6 +37,7 @@ fun MainScaffold(
     val showUpdatePrompt by AppUpdateManager.showUpdatePrompt.collectAsState()
 
     LaunchedEffect(Unit) {
+        AuthRepository().bootstrapSession()
         AppUpdateManager.checkOnStartup(
             context = context,
             platform = AppPlatform.MOBILE,

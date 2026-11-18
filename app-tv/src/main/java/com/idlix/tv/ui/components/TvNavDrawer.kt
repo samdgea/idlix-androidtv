@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
@@ -61,6 +62,7 @@ enum class NavItem(val labelRes: Int, val icon: ImageVector) {
     CONTINUE_WATCHING(R.string.continue_watching, Icons.Default.History),
     MOVIES(R.string.movies, Icons.Default.Movie),
     SERIES(R.string.series, Icons.Default.Tv),
+    ACCOUNT(R.string.account, Icons.Default.Person),
     SETTINGS(R.string.settings, Icons.Default.Settings)
 }
 

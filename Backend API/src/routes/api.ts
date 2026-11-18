@@ -5,6 +5,38 @@ import { globalCache } from '../services/CacheService.js';
 export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   const engine = IdlixScraperEngine.getInstance();
 
+  const forwardAuthHeaders = (headers: Record<string, any>): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const forwardKeys = ['x-client-version', 'x-client-fp', 'x-refresh-recovery'];
+    for (const key of forwardKeys) {
+      const val = headers[key];
+      if (typeof val === 'string' && val.trim()) {
+        out[key] = val;
+      }
+    }
+    return out;
+  };
+
+  const hasClientAuthCookie = (cookieHeader?: string): boolean => {
+    if (!cookieHeader) return false;
+    return cookieHeader
+      .split(';')
+      .map((part) => part.trim().split('=')[0]?.toLowerCase())
+      .some((name) => Boolean(name && name !== 'did' && name !== 'cf_clearance' && name !== '__cf_bm'));
+  };
+
+  const sendWithSetCookies = (
+    reply: any,
+    status: number,
+    data: any,
+    setCookies: string[]
+  ) => {
+    if (setCookies.length > 0) {
+      reply.header('set-cookie', setCookies);
+    }
+    return reply.status(status).send(data);
+  };
+
   // Health and Status
   fastify.get('/health', async () => {
     return {
@@ -166,11 +198,89 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
     return reply.status(result.status).send(result.data);
   });
 
+  // Auth passthrough (stateless per-client cookies, isolated from global Puppeteer jar)
+  fastify.post('/api/auth/login', async (req, reply) => {
+    const result = await engine.executeIsolatedFetch('/api/auth/login', {
+      method: 'POST',
+      body: req.body,
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
+  fastify.get('/api/auth/me', async (req, reply) => {
+    const result = await engine.executeIsolatedFetch('/api/auth/me', {
+      method: 'GET',
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
+  fastify.post<{ Querystring: { bootstrap?: string } }>('/api/auth/refresh', async (req, reply) => {
+    const bootstrap = req.query.bootstrap ?? '0';
+    const result = await engine.executeIsolatedFetch(`/api/auth/refresh?bootstrap=${encodeURIComponent(bootstrap)}`, {
+      method: 'POST',
+      body: req.body ?? {},
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
+  fastify.post('/api/auth/logout', async (req, reply) => {
+    const result = await engine.executeIsolatedFetch('/api/auth/logout', {
+      method: 'POST',
+      body: req.body ?? { scope: 'local' },
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
+  fastify.get('/api/auth/sessions', async (req, reply) => {
+    const result = await engine.executeIsolatedFetch('/api/auth/sessions', {
+      method: 'GET',
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
+  fastify.post('/api/auth/sessions/revoke', async (req, reply) => {
+    const result = await engine.executeIsolatedFetch('/api/auth/sessions/revoke', {
+      method: 'POST',
+      body: req.body,
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
+  fastify.post('/api/auth/sessions/logout-others', async (req, reply) => {
+    const result = await engine.executeIsolatedFetch('/api/auth/sessions/logout-others', {
+      method: 'POST',
+      body: req.body ?? {},
+      headers: forwardAuthHeaders(req.headers),
+      clientCookie: req.headers.cookie as string | undefined,
+    });
+    return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+  });
+
   // Play info (gateToken & countdown)
   fastify.get<{ Params: { contentType: string; id: string } }>(
     '/api/watch/play-info/:contentType/:id',
     async (req, reply) => {
       const { contentType, id } = req.params;
+      const incomingCookie = (req.headers.cookie as string) || undefined;
+      if (hasClientAuthCookie(incomingCookie)) {
+        const result = await engine.executeIsolatedFetch(`/api/watch/play-info/${contentType}/${id}`, {
+          method: 'GET',
+          clientCookie: incomingCookie,
+        });
+        return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+      }
       const result = await engine.executeFetch(`/api/watch/play-info/${contentType}/${id}`);
       return reply.status(result.status).send(result.data);
     }
@@ -194,6 +304,15 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
     } catch (_) {}
 
     const incomingCookie = (req.headers.cookie as string) || undefined;
+    if (hasClientAuthCookie(incomingCookie)) {
+      const result = await engine.executeIsolatedFetch('/api/watch/session/claim', {
+        method: 'POST',
+        body: { gateToken, ...(verificationToken ? { verificationToken } : {}) },
+        clientCookie: incomingCookie,
+      });
+      return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+    }
+
     const cookieHeader = didCookie || incomingCookie;
 
     const result = await engine.executeFetch('/api/watch/session/claim', {
@@ -221,6 +340,19 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
         : `/api${url.startsWith('/') ? '' : '/'}${url}`;
       const incomingCookie = (req.headers.cookie as string) || undefined;
       const targetOrigin = process.env.IDLIX_BASE_URL || 'https://z3.idlixku.com';
+
+      if (hasClientAuthCookie(incomingCookie)) {
+        const result = await engine.executeIsolatedFetch(normalizedUrl, {
+          method: 'POST',
+          body: { claim, mode },
+          headers: {
+            Referer: `${targetOrigin}/`,
+            Origin: targetOrigin,
+          },
+          clientCookie: incomingCookie,
+        });
+        return sendWithSetCookies(reply, result.status, result.data, result.setCookies);
+      }
 
       const result = await engine.executeFetch(normalizedUrl, {
         method: 'POST',

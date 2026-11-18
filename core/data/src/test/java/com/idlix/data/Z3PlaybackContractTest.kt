@@ -4,10 +4,14 @@ import com.idlix.data.api.ApiClient
 import com.idlix.data.api.IdlixApiService
 import com.idlix.data.api.MajorplayApiService
 import com.idlix.data.model.ApiErrorResponse
+import com.idlix.data.model.AuthMeResponse
+import com.idlix.data.model.AuthSessionsResponse
 import com.idlix.data.model.ClaimRequest
 import com.idlix.data.model.ClaimResponse
 import com.idlix.data.model.EpisodeResponse
 import com.idlix.data.model.GenreListResponse
+import com.idlix.data.model.LoginRequest
+import com.idlix.data.model.LogoutRequest
 import com.idlix.data.model.MovieDetail
 import com.idlix.data.model.MovieListResponse
 import com.idlix.data.model.PlayInfoResponse
@@ -15,6 +19,7 @@ import com.idlix.data.model.PlaybackVerificationChallenge
 import com.idlix.data.model.RedeemRequest
 import com.idlix.data.model.RedeemResponse
 import com.idlix.data.model.ResolvedPlayback
+import com.idlix.data.model.RevokeSessionRequest
 import com.idlix.data.model.SearchResponse
 import com.idlix.data.model.SeriesDetail
 import com.idlix.data.model.SeriesListResponse
@@ -141,7 +146,6 @@ class Z3PlaybackContractTest {
             override suspend fun claimSession(
                 url: String,
                 request: ClaimRequest,
-                cookie: String?,
                 origin: String,
                 referer: String
             ): Response<ClaimResponse> {
@@ -170,7 +174,6 @@ class Z3PlaybackContractTest {
         val fakeMajorplayApi = object : MajorplayApiService {
             override suspend fun redeemPlay(
                 url: String,
-                cookie: String?,
                 referer: String,
                 origin: String,
                 request: RedeemRequest
@@ -230,7 +233,6 @@ class Z3PlaybackContractTest {
             override suspend fun claimSession(
                 url: String,
                 request: ClaimRequest,
-                cookie: String?,
                 origin: String,
                 referer: String
             ): Response<ClaimResponse> {
@@ -246,7 +248,6 @@ class Z3PlaybackContractTest {
         val fakeMajorplayApi = object : MajorplayApiService {
             override suspend fun redeemPlay(
                 url: String,
-                cookie: String?,
                 referer: String,
                 origin: String,
                 request: RedeemRequest
@@ -290,7 +291,6 @@ class Z3PlaybackContractTest {
         override suspend fun claimSession(
             url: String,
             request: ClaimRequest,
-            cookie: String?,
             origin: String,
             referer: String
         ): Response<ClaimResponse> = throw NotImplementedError()
@@ -300,5 +300,15 @@ class Z3PlaybackContractTest {
             contentId: String,
             contentTitle: String?
         ): ResolvedPlayback = throw NotImplementedError()
+
+        override suspend fun login(request: LoginRequest, fingerprint: String): Response<AuthMeResponse> =
+            throw NotImplementedError()
+
+        override suspend fun getMe(): Response<AuthMeResponse> = throw NotImplementedError()
+        override suspend fun refreshSession(bootstrap: Int): Response<AuthMeResponse> = throw NotImplementedError()
+        override suspend fun logout(request: LogoutRequest): Response<Unit> = throw NotImplementedError()
+        override suspend fun getSessions(): Response<AuthSessionsResponse> = throw NotImplementedError()
+        override suspend fun revokeSession(request: RevokeSessionRequest): Response<Unit> = throw NotImplementedError()
+        override suspend fun logoutOtherSessions(): Response<Unit> = throw NotImplementedError()
     }
 }

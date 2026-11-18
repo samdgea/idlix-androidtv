@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -62,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.idlix.data.local.AuthSessionStore
+import com.idlix.data.model.AuthState
 import com.idlix.data.model.WatchHistoryItem
 import com.idlix.mobile.R
 import com.idlix.mobile.download.DownloadStatus
@@ -90,10 +93,12 @@ fun LibraryScreen(
         onNavigateToDetail(item.contentType, slug)
     },
     onNavigateToSettings: () -> Unit,
+    onNavigateToAccount: () -> Unit = {},
     initialTab: String? = null,
     viewModel: LibraryViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val authState by AuthSessionStore.authState.collectAsState()
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showClearDownloadsDialog by remember { mutableStateOf(false) }
 
@@ -143,6 +148,14 @@ fun LibraryScreen(
                             tint = TextMuted
                         )
                     }
+                }
+
+                IconButton(onClick = onNavigateToAccount) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = stringResource(R.string.account),
+                        tint = if (authState is AuthState.Authenticated) Color(0xFF4CAF50) else TextWhite
+                    )
                 }
 
                 IconButton(onClick = onNavigateToSettings) {

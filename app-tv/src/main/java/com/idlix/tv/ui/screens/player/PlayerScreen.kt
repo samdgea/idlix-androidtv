@@ -68,7 +68,9 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.idlix.data.api.ApiClient
+import com.idlix.data.local.AuthSessionStore
 import com.idlix.data.local.PlayerAppearanceStore
+import com.idlix.data.model.AuthState
 import com.idlix.player.ui.SubtitleOverlay
 import com.idlix.player.ui.TurnstileVerificationActivity
 import com.idlix.player.ui.rememberPlayerCues
@@ -143,6 +145,7 @@ fun PlayerScreen(
     slug: String? = null,
     seasonNumber: Int? = null,
     episodeNumber: Int? = null,
+    onNavigateToAccount: () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = viewModel()
@@ -394,6 +397,19 @@ fun PlayerScreen(
                         )
                     ) {
                         Text(text = stringResource(R.string.back))
+                    }
+
+                    val currentAuth by AuthSessionStore.authState.collectAsState()
+                    if (currentAuth is AuthState.Guest) {
+                        Button(
+                            onClick = onNavigateToAccount,
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixLightGray.copy(alpha = 0.25f),
+                                contentColor = NetflixWhite
+                            )
+                        ) {
+                            Text(text = stringResource(R.string.account_sign_in_to_unlock))
+                        }
                     }
                 }
             }

@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.idlix.data.repository.AuthRepository
 import com.idlix.data.update.AppPlatform
 import com.idlix.data.update.AppUpdateManager
 import com.idlix.data.update.AppUpdateState
@@ -19,6 +20,7 @@ import com.idlix.tv.BuildConfig
 import com.idlix.tv.ui.components.NavItem
 import com.idlix.tv.ui.components.TvNavDrawer
 import com.idlix.tv.ui.components.TvUpdateDialog
+import com.idlix.tv.ui.screens.account.AccountScreen
 import com.idlix.tv.ui.screens.detail.DetailScreen
 import com.idlix.tv.ui.screens.history.ContinueWatchingScreen
 import com.idlix.tv.ui.screens.home.HomeScreen
@@ -44,6 +46,7 @@ fun AppNavigation(
     val showUpdatePrompt by AppUpdateManager.showUpdatePrompt.collectAsState()
 
     LaunchedEffect(Unit) {
+        AuthRepository().bootstrapSession()
         AppUpdateManager.checkOnStartup(
             context = context,
             platform = AppPlatform.TV,
@@ -70,6 +73,7 @@ fun AppNavigation(
         currentRoute.startsWith("continue_watching") -> NavItem.CONTINUE_WATCHING
         currentRoute.startsWith("movies") -> NavItem.MOVIES
         currentRoute.startsWith("series") -> NavItem.SERIES
+        currentRoute.startsWith("account") -> NavItem.ACCOUNT
         currentRoute.startsWith("settings") -> NavItem.SETTINGS
         else -> NavItem.HOME
     }
@@ -111,6 +115,11 @@ fun AppNavigation(
                         restoreState = true
                     }
                     NavItem.SERIES -> navController.navigate(Screen.Series.route) {
+                        popUpTo(Screen.Home.route)
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                    NavItem.ACCOUNT -> navController.navigate(Screen.Account.route) {
                         popUpTo(Screen.Home.route)
                         launchSingleTop = true
                         restoreState = true
@@ -191,8 +200,18 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
         )
     }
 
+    composable(Screen.Account.route) {
+        AccountScreen()
+    }
+
     composable(Screen.Settings.route) {
         SettingsScreen(
+            onOpenAccount = {
+                navController.navigate(Screen.Account.route) {
+                    popUpTo(Screen.Home.route)
+                    launchSingleTop = true
+                }
+            },
             onOpenSubtitlePositionEditor = {
                 navController.navigate(Screen.SubtitlePositionEditor.route)
             }
@@ -295,6 +314,12 @@ private fun androidx.navigation.NavGraphBuilder.setupNavRoutes(
             slug = slug,
             seasonNumber = season,
             episodeNumber = episode,
+            onNavigateToAccount = {
+                navController.navigate(Screen.Account.route) {
+                    popUpTo(Screen.Home.route)
+                    launchSingleTop = true
+                }
+            },
             onBack = { navController.popBackStack() }
         )
     }

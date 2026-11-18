@@ -3,6 +3,7 @@ package com.idlix.data.repository
 import com.idlix.data.api.ApiClient
 import com.idlix.data.api.IdlixApiService
 import com.idlix.data.api.MajorplayApiService
+import com.idlix.data.local.AuthSessionStore
 import com.idlix.data.model.ApiErrorResponse
 import com.idlix.data.model.ClaimRequest
 import com.idlix.data.model.ClaimResponse
@@ -164,6 +165,15 @@ class IdlixRepository(
         private val activePrewarms = ConcurrentHashMap<String, Deferred<Result<ResolvedPlayback>>>()
         private const val CACHE_TTL_MS = 60 * 60 * 1000L // 60 minutes
         private val repoScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+        fun clearPlaybackCache() {
+            playbackCache.clear()
+        }
+    }
+
+    private fun currentCacheKey(contentType: String, contentId: String): String {
+        val userScope = AuthSessionStore.currentUser()?.id?.takeIf { it.isNotBlank() } ?: "guest"
+        return "$userScope:$contentType:$contentId"
     }
 
     /**
@@ -171,7 +181,7 @@ class IdlixRepository(
      * details or looking at synopsis. When they click "Play", the stream is already unlocked!
      */
     fun prewarmStream(contentType: String, contentId: String, contentTitle: String) {
-        val cacheKey = "$contentType:$contentId"
+        val cacheKey = currentCacheKey(contentType, contentId)
         val cached = playbackCache[cacheKey]
         if (cached != null && (System.currentTimeMillis() - cached.timestamp) < CACHE_TTL_MS) {
             return
@@ -204,7 +214,7 @@ class IdlixRepository(
         onCountdown: ((Int) -> Unit)? = null,
         onVerificationRequired: (suspend (PlaybackVerificationChallenge) -> String?)? = null
     ): Result<ResolvedPlayback> = withContext(Dispatchers.IO) {
-        val cacheKey = "$contentType:$contentId"
+        val cacheKey = currentCacheKey(contentType, contentId)
 
         // In-memory cache hit
         val cached = playbackCache[cacheKey]
@@ -265,8 +275,8 @@ class IdlixRepository(
                 }
             }
 
-            // High-performance path: If no interactive countdown listener is needed, use backend one-shot resolver
-            if (onCountdown == null) {
+            // High-performance path: If no interactive countdown listener is needed and user is guest, use backend one-shot resolver
+            if (onCountdown == null && !AuthSessionStore.isAuthenticated()) {
                 try {
                     val resolved = idlixApi.resolvePlayback(
                         contentType = targetType,
@@ -311,7 +321,9 @@ class IdlixRepository(
             }
 
             val activeDid = extractDidFromGateToken(playInfo.gateToken) ?: ApiClient.getDeviceId()
-            val didCookie = "did=$activeDid"
+            if (activeDid.isNotBlank()) {
+                ApiClient.cookieJar.upsertCookie(resolvedOrigin, "did", activeDid)
+            }
 
             var secondsLeft = (diffMs / 1000).toInt()
             while (secondsLeft > 1) {
@@ -358,7 +370,6 @@ class IdlixRepository(
                             gateToken = playInfo.gateToken,
                             verificationToken = verificationToken
                         ),
-                        cookie = didCookie,
                         origin = resolvedOrigin,
                         referer = "$resolvedOrigin/"
                     )
@@ -447,9 +458,11 @@ class IdlixRepository(
             for (candidateUrl in redeemCandidates) {
                 try {
                     val includeDidCookie = candidateUrl.startsWith(resolvedOrigin) || candidateUrl.contains("idlix")
+                    if (includeDidCookie && activeDid.isNotBlank()) {
+                        ApiClient.cookieJar.upsertCookie(candidateUrl, "did", activeDid)
+                    }
                     val res = majorplayApi.redeemPlay(
                         url = candidateUrl,
-                        cookie = if (includeDidCookie) didCookie else null,
                         referer = "$resolvedOrigin/",
                         origin = resolvedOrigin,
                         request = RedeemRequest(claim = claimRes.claim, mode = "browser")
@@ -496,7 +509,9 @@ class IdlixRepository(
                     hlsMasterUrl = redeemRes.url,
                     subtitles = finalSubtitles,
                     durationSec = claimRes.durationSec,
-                    videoId = claimRes.videoId
+                    videoId = claimRes.videoId,
+                    viewerTier = claimRes.viewerTier,
+                    maxHeight = claimRes.maxHeight
                 )
             )
         } catch (e: Exception) {

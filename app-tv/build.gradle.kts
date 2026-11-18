@@ -23,8 +23,8 @@ android {
         applicationId = "com.idlix.tv"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
 
         val backendUrl = localProperties.getProperty("backendApiUrl") ?: "https://z3.idlixku.com/"
         buildConfigField("String", "BACKEND_API_URL", "\"$backendUrl\"")

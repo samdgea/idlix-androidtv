@@ -57,7 +57,9 @@ data class ApiErrorResponse(
     val code: String = "",
     val scope: String? = null,
     val retryAfter: Long? = null,
-    val siteKey: String? = null
+    val siteKey: String? = null,
+    val limit: Int? = null,
+    val currentCount: Int? = null
 )
 
 data class PlaybackVerificationChallenge(
@@ -99,5 +101,7 @@ data class ResolvedPlayback(
     val hlsMasterUrl: String = "",
     val subtitles: List<SubtitleTrack> = emptyList(),
     val durationSec: Long = 0L,
-    val videoId: String = ""
+    val videoId: String = "",
+    val viewerTier: String = "guest",
+    val maxHeight: Int = 720
 )
