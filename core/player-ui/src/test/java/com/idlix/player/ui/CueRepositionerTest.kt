@@ -42,5 +42,26 @@ class CueRepositionerTest {
         assertEquals(1, result.size)
         assertEquals("Line 1\nLine 2", result[0].text.toString())
     }
+
+    @Test
+    fun testLineNumberCueIsRepositionedToFraction() {
+        val cue = Cue.Builder()
+            .setText("VTT Line -1")
+            .setLine(-1f, Cue.LINE_TYPE_NUMBER)
+            .build()
+        val app = PlayerAppearance(
+            subtitlePosX = 0.70f,
+            subtitlePosY = 0.75f,
+            subtitleSize = SubtitleSize.MEDIUM
+        )
+        val result = CueRepositioner.reposition(listOf(cue), app)
+        assertEquals(1, result.size)
+        val rCue = result[0]
+        assertEquals(0.70f, rCue.position, 0.001f)
+        assertEquals(Cue.ANCHOR_TYPE_MIDDLE, rCue.positionAnchor)
+        assertEquals(Cue.LINE_TYPE_FRACTION, rCue.lineType)
+        assertEquals(0.75f, rCue.line, 0.001f)
+        assertEquals(Cue.ANCHOR_TYPE_END, rCue.lineAnchor)
+    }
 }
 

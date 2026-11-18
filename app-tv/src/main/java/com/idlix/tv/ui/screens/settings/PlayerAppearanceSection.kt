@@ -400,13 +400,24 @@ fun PlayerAppearanceSection(
         supportsAlpha = activePicker == ActivePicker.BOX,
         recentColors = recentColors,
         onColorSelected = { selected ->
-            when (activePicker) {
-                ActivePicker.BACKGROUND -> PlayerAppearanceStore.update { it.copy(backgroundColor = selected or 0xFF000000.toInt()) }
-                ActivePicker.TEXT -> PlayerAppearanceStore.update { it.copy(subtitleTextColor = selected or 0xFF000000.toInt()) }
-                ActivePicker.BOX -> PlayerAppearanceStore.update { it.copy(subtitleBoxColor = selected) }
-                ActivePicker.NONE -> {}
+            val storedColor = when (activePicker) {
+                ActivePicker.BACKGROUND -> {
+                    val opaque = selected or 0xFF000000.toInt()
+                    PlayerAppearanceStore.update { it.copy(backgroundColor = opaque) }
+                    opaque
+                }
+                ActivePicker.TEXT -> {
+                    val opaque = selected or 0xFF000000.toInt()
+                    PlayerAppearanceStore.update { it.copy(subtitleTextColor = opaque) }
+                    opaque
+                }
+                ActivePicker.BOX -> {
+                    PlayerAppearanceStore.update { it.copy(subtitleBoxColor = selected) }
+                    selected
+                }
+                ActivePicker.NONE -> selected
             }
-            PlayerAppearanceStore.addRecentCustomColor(selected)
+            PlayerAppearanceStore.addRecentCustomColor(storedColor)
             activePicker = ActivePicker.NONE
         },
         onDismiss = { activePicker = ActivePicker.NONE }

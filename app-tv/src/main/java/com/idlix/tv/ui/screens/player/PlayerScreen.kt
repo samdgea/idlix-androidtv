@@ -638,11 +638,13 @@ fun PlayerScreen(
                     PlayerView(ctx).apply {
                         player = exoPlayer
                         useController = false
+                        setBackgroundColor(appearance.backgroundColor)
                         setShutterBackgroundColor(appearance.backgroundColor)
                         subtitleView?.visibility = android.view.View.GONE
                     }
                 },
                 update = { view ->
+                    view.setBackgroundColor(appearance.backgroundColor)
                     view.setShutterBackgroundColor(appearance.backgroundColor)
                 },
                 modifier = Modifier.fillMaxSize()

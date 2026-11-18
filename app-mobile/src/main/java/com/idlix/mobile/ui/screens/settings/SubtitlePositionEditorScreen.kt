@@ -2,6 +2,7 @@ package com.idlix.mobile.ui.screens.settings
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -29,17 +30,21 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -78,6 +83,19 @@ fun SubtitlePositionEditorScreen(
 
     val appearance by PlayerAppearanceStore.appearance.collectAsState()
     val state = rememberPositionEditorState(appearance)
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    fun handleBackRequest() {
+        if (state.isDirty) {
+            showDiscardDialog = true
+        } else {
+            onBack()
+        }
+    }
+
+    BackHandler(enabled = state.isDirty && !showDiscardDialog) {
+        showDiscardDialog = true
+    }
 
     val sampleText1 = stringResource(R.string.subtitle_preview_sample_1)
     val sampleText2 = stringResource(R.string.subtitle_preview_sample_2)
@@ -178,7 +196,7 @@ fun SubtitlePositionEditorScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = { handleBackRequest() }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.back),
@@ -315,6 +333,53 @@ fun SubtitlePositionEditorScreen(
                     fontSize = 11.sp
                 )
             }
+        }
+
+        if (showDiscardDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiscardDialog = false },
+                containerColor = Color(0xFF1E1E1E),
+                title = {
+                    Text(
+                        text = stringResource(R.string.discard_changes_title),
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = stringResource(R.string.discard_changes_desc),
+                        color = TextDim
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            state.commit()
+                            showDiscardDialog = false
+                            onBack()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = IdlixRed)
+                    ) {
+                        Text(stringResource(R.string.save), color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = {
+                                showDiscardDialog = false
+                                onBack()
+                            }
+                        ) {
+                            Text(stringResource(R.string.discard), color = TextDim)
+                        }
+                        TextButton(onClick = { showDiscardDialog = false }) {
+                            Text(stringResource(R.string.keep_editing), color = TextWhite)
+                        }
+                    }
+                }
+            )
         }
     }
 }

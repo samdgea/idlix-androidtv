@@ -81,12 +81,34 @@ fun SubtitlePositionEditorContent(
 
     val surfaceFocusRequester = remember { FocusRequester() }
     val saveButtonFocusRequester = remember { FocusRequester() }
+    val dialogSaveFocusRequester = remember { FocusRequester() }
     var isSurfaceFocused by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    fun handleDismissRequest() {
+        if (state.isDirty) {
+            showDiscardDialog = true
+        } else {
+            onDismiss()
+        }
+    }
 
     LaunchedEffect(Unit) {
         try {
             surfaceFocusRequester.requestFocus()
         } catch (_: Exception) {}
+    }
+
+    LaunchedEffect(showDiscardDialog) {
+        if (showDiscardDialog) {
+            try {
+                dialogSaveFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        } else {
+            try {
+                surfaceFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
     }
 
     Box(
@@ -97,42 +119,58 @@ fun SubtitlePositionEditorContent(
             .focusable()
             .onKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
-                    val isRepeating = keyEvent.nativeKeyEvent.repeatCount > 0
-                    val step = if (isRepeating) 0.035f else 0.01f
+                    if (showDiscardDialog) {
+                        if (keyEvent.key == Key.Back) {
+                            showDiscardDialog = false
+                            return@onKeyEvent true
+                        }
+                        return@onKeyEvent false
+                    }
 
-                    when (keyEvent.key) {
-                        Key.DirectionLeft -> {
-                            state.nudge(-step, 0f, snapCenter = true)
-                            return@onKeyEvent true
-                        }
-                        Key.DirectionRight -> {
-                            state.nudge(step, 0f, snapCenter = true)
-                            return@onKeyEvent true
-                        }
-                        Key.DirectionUp -> {
-                            state.nudge(0f, -step, snapCenter = true)
-                            return@onKeyEvent true
-                        }
-                        Key.DirectionDown -> {
-                            // If at bottom edge, shift focus down to the action buttons
-                            if (state.posY >= SafeBounds.maxY() - 0.015f) {
-                                try {
-                                    saveButtonFocusRequester.requestFocus()
-                                } catch (_: Exception) {}
-                            } else {
-                                state.nudge(0f, step, snapCenter = true)
+                    if (keyEvent.key == Key.Back) {
+                        handleDismissRequest()
+                        return@onKeyEvent true
+                    }
+
+                    if (isSurfaceFocused) {
+                        val isRepeating = keyEvent.nativeKeyEvent.repeatCount > 0
+                        val step = if (isRepeating) 0.035f else 0.01f
+
+                        when (keyEvent.key) {
+                            Key.DirectionLeft -> {
+                                state.nudge(-step, 0f, snapCenter = true)
+                                return@onKeyEvent true
                             }
-                            return@onKeyEvent true
+                            Key.DirectionRight -> {
+                                state.nudge(step, 0f, snapCenter = true)
+                                return@onKeyEvent true
+                            }
+                            Key.DirectionUp -> {
+                                state.nudge(0f, -step, snapCenter = true)
+                                return@onKeyEvent true
+                            }
+                            Key.DirectionDown -> {
+                                // If at bottom edge, shift focus down to the action buttons
+                                if (state.posY >= SafeBounds.maxY() - 0.015f) {
+                                    try {
+                                        saveButtonFocusRequester.requestFocus()
+                                    } catch (_: Exception) {}
+                                } else {
+                                    state.nudge(0f, step, snapCenter = true)
+                                }
+                                return@onKeyEvent true
+                            }
+                            Key.DirectionCenter, Key.Enter -> {
+                                state.commit()
+                                onSaved()
+                                return@onKeyEvent true
+                            }
                         }
-                        Key.DirectionCenter, Key.Enter -> {
-                            state.commit()
-                            onSaved()
-                            return@onKeyEvent true
-                        }
-                        Key.Back -> {
-                            onDismiss()
-                            return@onKeyEvent true
-                        }
+                    } else if (keyEvent.key == Key.DirectionUp) {
+                        try {
+                            surfaceFocusRequester.requestFocus()
+                        } catch (_: Exception) {}
+                        return@onKeyEvent true
                     }
                 }
                 false
@@ -229,7 +267,7 @@ fun SubtitlePositionEditorContent(
             }
 
             Button(
-                onClick = onDismiss,
+                onClick = { handleDismissRequest() },
                 colors = ButtonDefaults.colors(
                     containerColor = NetflixDarkCard,
                     focusedContainerColor = NetflixWhite,
@@ -270,6 +308,90 @@ fun SubtitlePositionEditorContent(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
+                }
+            }
+        }
+
+        if (showDiscardDialog) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xB3000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(420.dp)
+                        .background(Color(0xFF1F1F1F), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.discard_changes_title),
+                        color = NetflixWhite,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.discard_changes_desc),
+                        color = NetflixLightGray,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                showDiscardDialog = false
+                                onDismiss()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixDarkCard,
+                                focusedContainerColor = NetflixWhite,
+                                contentColor = NetflixLightGray,
+                                focusedContentColor = NetflixBlack
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = stringResource(R.string.discard), fontSize = 12.sp)
+                        }
+                        Button(
+                            onClick = { showDiscardDialog = false },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixDarkCard,
+                                focusedContainerColor = NetflixWhite,
+                                contentColor = NetflixLightGray,
+                                focusedContentColor = NetflixBlack
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = stringResource(R.string.keep_editing), fontSize = 12.sp)
+                        }
+                        Button(
+                            onClick = {
+                                state.commit()
+                                showDiscardDialog = false
+                                onSaved()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixRed,
+                                focusedContainerColor = Color(0xFFE50914).copy(alpha = 0.8f),
+                                contentColor = NetflixWhite,
+                                focusedContentColor = NetflixWhite
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(dialogSaveFocusRequester)
+                        ) {
+                            Text(text = stringResource(R.string.save), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         }

@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -327,11 +328,18 @@ fun TvColorPickerDialog(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         recentColors.forEach { col ->
+                            var isSwatchFocused by remember { mutableStateOf(false) }
                             Box(
                                 modifier = Modifier
                                     .size(28.dp)
+                                    .clip(CircleShape)
                                     .background(Color(col), CircleShape)
-                                    .border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                                    .border(
+                                        width = if (isSwatchFocused) 2.dp else 1.dp,
+                                        color = if (isSwatchFocused) NetflixWhite else Color.White.copy(alpha = 0.4f),
+                                        shape = CircleShape
+                                    )
+                                    .onFocusChanged { isSwatchFocused = it.isFocused }
                                     .clickable { state.setColor(col) }
                             )
                         }
