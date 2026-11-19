@@ -21,6 +21,7 @@ sealed class MobileScreen(val route: String) {
         fun createRoute(tab: String = "history"): String = "library?tab=$tab"
     }
     object Settings : MobileScreen("settings")
+    object Account : MobileScreen("account")
     object SubtitlePositionEditor : MobileScreen("settings/subtitle_position")
 
     object Detail : MobileScreen(

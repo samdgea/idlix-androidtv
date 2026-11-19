@@ -10,19 +10,12 @@ object SafeBounds {
     const val CENTER_X = 0.50f
     const val SNAP_THRESHOLD_X = 0.018f
 
-    fun minYForSize(size: SubtitleSize): Float {
-        return when (size) {
-            SubtitleSize.SMALL -> 0.08f
-            SubtitleSize.MEDIUM -> 0.10f
-            SubtitleSize.LARGE -> 0.12f
-            SubtitleSize.EXTRA_LARGE -> 0.15f
-        }
-    }
+    fun minYForSize(size: SubtitleSize): Float = PlayerAppearance.minYForSize(size)
 
-    fun maxY(): Float = 0.95f
+    fun maxY(): Float = PlayerAppearance.SAFE_Y_RANGE.endInclusive
 
-    fun minX(): Float = 0.15f
-    fun maxX(): Float = 0.85f
+    fun minX(): Float = PlayerAppearance.SAFE_X_RANGE.start
+    fun maxX(): Float = PlayerAppearance.SAFE_X_RANGE.endInclusive
 
     fun clamp(
         x: Float,

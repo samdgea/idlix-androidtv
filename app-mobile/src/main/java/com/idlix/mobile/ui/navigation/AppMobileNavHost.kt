@@ -11,6 +11,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.idlix.mobile.ui.screens.account.AccountScreen
 import com.idlix.mobile.ui.screens.detail.DetailScreen
 import com.idlix.mobile.ui.screens.home.HomeScreen
 import com.idlix.mobile.ui.screens.library.LibraryScreen
@@ -56,6 +57,9 @@ fun AppMobileNavHost(
                 },
                 onNavigateToSettings = {
                     navController.navigate(MobileScreen.Settings.route)
+                },
+                onNavigateToAccount = {
+                    navController.navigate(MobileScreen.Account.route)
                 },
                 onOpenOfflineDownloads = {
                     navController.navigate(MobileScreen.Library.createRoute("downloads")) {
@@ -150,6 +154,9 @@ fun AppMobileNavHost(
                 onNavigateToSettings = {
                     navController.navigate(MobileScreen.Settings.route)
                 },
+                onNavigateToAccount = {
+                    navController.navigate(MobileScreen.Account.route)
+                },
                 initialTab = initialTab
             )
         }
@@ -237,9 +244,32 @@ fun AppMobileNavHost(
         ) {
             SettingsScreen(
                 onBackClick = { navController.popBackStack() },
+                onOpenAccount = {
+                    navController.navigate(MobileScreen.Account.route)
+                },
                 onOpenSubtitlePositionEditor = {
                     navController.navigate(MobileScreen.SubtitlePositionEditor.route)
                 }
+            )
+        }
+
+        composable(
+            route = MobileScreen.Account.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Start,
+                    animationSpec = tween(350)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.End,
+                    animationSpec = tween(350)
+                )
+            }
+        ) {
+            AccountScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
 

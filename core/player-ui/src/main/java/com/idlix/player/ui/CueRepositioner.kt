@@ -29,22 +29,42 @@ object CueRepositioner {
                 // Standard default subtitle (SRT, VTT without explicit line)
                 defaultTextCues.add(cue)
             } else {
-                // Subtitle with explicit positioning tag (e.g. ASS {\an8} top position)
+                // Subtitle with explicit positioning tag (e.g. ASS {\an8} top position or WebVTT line)
                 val deltaX = clampedX - PlayerAppearance.DEFAULT_POS_X
                 val deltaY = clampedY - PlayerAppearance.DEFAULT_POS_Y
+                val minY = SafeBounds.minYForSize(appearance.subtitleSize)
+                val maxY = SafeBounds.maxY()
 
-                val originalPos = if (cue.position != Cue.DIMEN_UNSET) cue.position else clampedX
-                val newPos = (originalPos + deltaX).coerceIn(SafeBounds.minX(), SafeBounds.maxX())
+                val (newPos, newPosAnchor) = if (cue.position != Cue.DIMEN_UNSET) {
+                    val shifted = (cue.position + deltaX).coerceIn(SafeBounds.minX(), SafeBounds.maxX())
+                    val anchor = if (cue.positionAnchor != Cue.TYPE_UNSET) cue.positionAnchor else Cue.ANCHOR_TYPE_MIDDLE
+                    shifted to anchor
+                } else {
+                    clampedX to Cue.ANCHOR_TYPE_MIDDLE
+                }
 
                 val newCue = cue.buildUpon()
                     .setPosition(newPos)
+                    .setPositionAnchor(newPosAnchor)
                     .apply {
-                        if (cue.lineType == Cue.LINE_TYPE_FRACTION) {
-                            val newLine = (cue.line + deltaY).coerceIn(
-                                SafeBounds.minYForSize(appearance.subtitleSize),
-                                SafeBounds.maxY()
-                            )
-                            setLine(newLine, Cue.LINE_TYPE_FRACTION)
+                        when (cue.lineType) {
+                            Cue.LINE_TYPE_FRACTION -> {
+                                val newLine = (cue.line + deltaY).coerceIn(minY, maxY)
+                                setLine(newLine, Cue.LINE_TYPE_FRACTION)
+                            }
+                            Cue.LINE_TYPE_NUMBER -> {
+                                val baseFraction = if (cue.line < 0f) {
+                                    // Negative line numbers (e.g. WebVTT line:-1) anchor from the bottom
+                                    (PlayerAppearance.DEFAULT_POS_Y + (cue.line + 1f) * 0.055f).coerceIn(minY, maxY)
+                                } else {
+                                    (0.08f + cue.line * 0.055f).coerceIn(minY, maxY)
+                                }
+                                val newLine = (baseFraction + deltaY).coerceIn(minY, maxY)
+                                setLine(newLine, Cue.LINE_TYPE_FRACTION)
+                                if (cue.line < 0f) {
+                                    setLineAnchor(Cue.ANCHOR_TYPE_END)
+                                }
+                            }
                         }
                     }
                     .build()

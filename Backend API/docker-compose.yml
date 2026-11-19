@@ -12,7 +12,7 @@ services:
     environment:
       - PORT=5376
       - HOST=0.0.0.0
-      - IDLIX_BASE_URL=https://z2.idlixku.com
+      - IDLIX_BASE_URL=https://z3.idlixku.com
       - LOG_LEVEL=info
     # Cap memory usage so it never hogs the VPS
     deploy:

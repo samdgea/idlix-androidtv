@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.idlix.data.local.WatchHistoryStore
 import com.idlix.data.model.EpisodeItem
 import com.idlix.data.model.MovieDetail
+import com.idlix.data.model.PlaybackVerificationChallenge
 import com.idlix.data.model.ResolvedPlayback
 import com.idlix.data.model.Season
 import com.idlix.data.model.SeriesDetail
@@ -22,6 +23,7 @@ import com.idlix.data.util.SubdlTitleCleaner
 import com.idlix.mobile.download.OfflineDownloadItem
 import com.idlix.mobile.download.OfflineDownloadManager
 import com.idlix.mobile.download.OfflineDownloadStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,7 +82,10 @@ data class DetailUiState(
     val isNextEpisodeDismissed: Boolean = false,
 
     // Offline Downloads (Mobile Only)
-    val downloadsByContentId: Map<String, OfflineDownloadItem> = emptyMap()
+    val downloadsByContentId: Map<String, OfflineDownloadItem> = emptyMap(),
+
+    // Security Verification
+    val verificationChallenge: PlaybackVerificationChallenge? = null
 )
 
 class DetailViewModel(
@@ -117,6 +122,19 @@ class DetailViewModel(
 
     private var playbackJob: Job? = null
     private var resolveNextEpisodeJob: Job? = null
+    private var pendingVerificationDeferred: CompletableDeferred<String?>? = null
+
+    fun submitVerificationToken(token: String) {
+        _uiState.value = _uiState.value.copy(verificationChallenge = null)
+        pendingVerificationDeferred?.complete(token)
+        pendingVerificationDeferred = null
+    }
+
+    fun cancelVerification() {
+        _uiState.value = _uiState.value.copy(verificationChallenge = null)
+        pendingVerificationDeferred?.complete(null)
+        pendingVerificationDeferred = null
+    }
 
     fun loadDetail(
         contentType: String,
@@ -662,6 +680,8 @@ class DetailViewModel(
         playbackJob?.cancel()
         resolveNextEpisodeJob?.cancel()
         resolveNextEpisodeJob = null
+        pendingVerificationDeferred?.cancel()
+        pendingVerificationDeferred = null
 
         currentContentId = contentId
         currentContentType = contentType
@@ -695,7 +715,8 @@ class DetailViewModel(
                 resolvedStream = null,
                 initialPositionMs = savedPos,
                 nextEpisode = null,
-                isNextEpisodeDismissed = false
+                isNextEpisodeDismissed = false,
+                verificationChallenge = null
             )
 
             // Asynchronously resolve next episode for Series
@@ -746,6 +767,19 @@ class DetailViewModel(
                 contentTitle = title,
                 onCountdown = { sec ->
                     _uiState.value = _uiState.value.copy(countdownSeconds = sec)
+                },
+                onVerificationRequired = { challenge ->
+                    val deferred = CompletableDeferred<String?>()
+                    pendingVerificationDeferred = deferred
+                    _uiState.value = _uiState.value.copy(verificationChallenge = challenge)
+                    try {
+                        deferred.await()
+                    } finally {
+                        if (pendingVerificationDeferred === deferred) {
+                            pendingVerificationDeferred = null
+                        }
+                        _uiState.value = _uiState.value.copy(verificationChallenge = null)
+                    }
                 }
             )
 
@@ -1223,6 +1257,8 @@ class DetailViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        pendingVerificationDeferred?.cancel()
+        pendingVerificationDeferred = null
         playbackJob?.cancel()
         resolveNextEpisodeJob?.cancel()
     }

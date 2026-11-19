@@ -13,6 +13,8 @@
 
 # Preserve Data Models for JSON serialization
 -keep class com.idlix.data.model.** { *; }
+-keep class com.idlix.data.local.StoredCookie { *; }
+-keep class com.idlix.data.local.StoredCookie$** { *; }
 -keep class com.idlix.tv.data.model.** { *; }
 
 # Debug symbols & stack trace line numbers deobfuscation
@@ -32,3 +34,8 @@
 
 # Room
 -keep class * extends androidx.room.RoomDatabase
+
+# WebView JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

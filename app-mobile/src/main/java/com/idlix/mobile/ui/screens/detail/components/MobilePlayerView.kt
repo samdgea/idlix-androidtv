@@ -360,11 +360,13 @@ fun MobilePlayerView(
                         player = exoPlayer
                         useController = false
                         keepScreenOn = true
+                        setBackgroundColor(appearance.backgroundColor)
                         setShutterBackgroundColor(appearance.backgroundColor)
                         subtitleView?.visibility = android.view.View.GONE
                     }
                 },
                 update = { view ->
+                    view.setBackgroundColor(appearance.backgroundColor)
                     view.setShutterBackgroundColor(appearance.backgroundColor)
                 },
                 modifier = Modifier.fillMaxSize()

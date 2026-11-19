@@ -1,6 +1,7 @@
 package com.idlix.mobile.ui.screens.detail
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -105,6 +106,7 @@ import com.idlix.mobile.ui.theme.SurfaceDark
 import com.idlix.mobile.ui.theme.TextMuted
 import com.idlix.mobile.ui.theme.TextSecondary
 import com.idlix.mobile.ui.theme.TextWhite
+import com.idlix.player.ui.TurnstileVerificationActivity
 
 @Composable
 fun DetailScreen(
@@ -867,6 +869,35 @@ fun DetailScreen(
         if (isEditingPosition) {
             SubtitlePositionEditorScreen(
                 onBack = { isEditingPosition = false }
+            )
+        }
+
+        // Security Verification (Cloudflare Turnstile in isolated :verify process)
+        val verificationLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val token = result.data?.getStringExtra(TurnstileVerificationActivity.EXTRA_TOKEN)
+            if (result.resultCode == Activity.RESULT_OK && !token.isNullOrBlank()) {
+                viewModel.submitVerificationToken(token)
+            } else {
+                viewModel.cancelVerification()
+            }
+        }
+
+        LaunchedEffect(uiState.verificationChallenge) {
+            val challenge = uiState.verificationChallenge ?: return@LaunchedEffect
+            verificationLauncher.launch(
+                TurnstileVerificationActivity.createIntent(
+                    context = context,
+                    siteKey = challenge.siteKey,
+                    action = challenge.action,
+                    originUrl = challenge.originUrl,
+                    title = context.getString(R.string.security_verification),
+                    desc = context.getString(R.string.security_verification_desc),
+                    cancelLabel = context.getString(R.string.cancel),
+                    retryLabel = context.getString(R.string.try_again),
+                    failedFormat = context.getString(R.string.verification_failed)
+                )
             )
         }
 

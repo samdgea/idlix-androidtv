@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Visibility
@@ -59,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.idlix.data.api.ApiClient
+import com.idlix.data.local.AuthSessionStore
+import com.idlix.data.model.AuthState
 import com.idlix.data.update.AppPlatform
 import com.idlix.data.update.AppUpdateManager
 import com.idlix.data.update.AppUpdateState
@@ -77,12 +80,14 @@ import com.idlix.mobile.ui.theme.TextWhite
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
+    onOpenAccount: () -> Unit = {},
     onOpenSubtitlePositionEditor: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val updateState by AppUpdateManager.state.collectAsState()
+    val authState by AuthSessionStore.authState.collectAsState()
     var isSubdlKeyVisible by remember { mutableStateOf(false) }
 
     Column(
@@ -121,6 +126,80 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // IDLIX Account Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = if (authState is AuthState.Authenticated) Color(0xFF4CAF50) else IdlixRed,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.account_header),
+                                color = TextWhite,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            when (val currentAuth = authState) {
+                                is AuthState.Authenticated -> {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.account_signed_in_as,
+                                            currentAuth.user.effectiveName
+                                        ),
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                is AuthState.Guest -> {
+                                    Text(
+                                        text = stringResource(R.string.account_guest_title),
+                                        color = TextMuted,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = onOpenAccount,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (authState is AuthState.Authenticated) SurfaceVariantDark else IdlixRed
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = if (authState is AuthState.Authenticated) {
+                                stringResource(R.string.account_manage_btn)
+                            } else {
+                                stringResource(R.string.account_sign_in_btn)
+                            },
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+
             // Backend API Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),

@@ -16,7 +16,14 @@ data class PlayerAppearance(
         const val DEFAULT_POS_Y: Float = 0.92f
 
         val SAFE_X_RANGE = 0.15f..0.85f
-        val SAFE_Y_RANGE = 0.12f..0.95f
+        val SAFE_Y_RANGE = 0.08f..0.95f
+
+        fun minYForSize(size: SubtitleSize): Float = when (size) {
+            SubtitleSize.SMALL -> 0.08f
+            SubtitleSize.MEDIUM -> 0.10f
+            SubtitleSize.LARGE -> 0.12f
+            SubtitleSize.EXTRA_LARGE -> 0.15f
+        }
     }
 }
 

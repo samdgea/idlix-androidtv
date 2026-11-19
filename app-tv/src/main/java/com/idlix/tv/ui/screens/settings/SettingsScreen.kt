@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
@@ -62,6 +63,8 @@ import androidx.tv.material3.Text
 import com.idlix.tv.BuildConfig
 import com.idlix.tv.R
 import com.idlix.data.api.ApiClient
+import com.idlix.data.local.AuthSessionStore
+import com.idlix.data.model.AuthState
 import com.idlix.data.model.SubdlResponse
 import com.idlix.data.repository.SubdlRepository
 import com.idlix.data.update.AppPlatform
@@ -81,6 +84,7 @@ import okhttp3.Request
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onOpenAccount: () -> Unit = {},
     onOpenSubtitlePositionEditor: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -114,6 +118,7 @@ fun SettingsScreen(
 
     var saveMessage by remember { mutableStateOf<String?>(null) }
     val updateState by AppUpdateManager.state.collectAsState()
+    val authState by AuthSessionStore.authState.collectAsState()
 
     LaunchedEffect(Unit) {
         if (updateState !is AppUpdateState.ReadyToInstall) {
@@ -257,6 +262,78 @@ fun SettingsScreen(
                     text = stringResource(R.string.settings_desc),
                     color = NetflixLightGray,
                     fontSize = 13.sp
+                )
+            }
+        }
+
+        // IDLIX Account Card
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(NetflixDarkCard, RoundedCornerShape(10.dp))
+                .padding(18.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = if (authState is AuthState.Authenticated) Color(0xFF4CAF50) else NetflixWhite,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = stringResource(R.string.account_header),
+                        color = NetflixWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    when (val currentAuth = authState) {
+                        is AuthState.Authenticated -> {
+                            Text(
+                                text = stringResource(R.string.account_signed_in_as, currentAuth.user.effectiveName),
+                                color = Color(0xFF4CAF50),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        is AuthState.Guest -> {
+                            Text(
+                                text = stringResource(R.string.account_guest_title),
+                                color = NetflixLightGray,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Button(
+                onClick = onOpenAccount,
+                colors = ButtonDefaults.colors(
+                    containerColor = if (authState is AuthState.Authenticated) NetflixBlack else NetflixRed,
+                    focusedContainerColor = NetflixWhite,
+                    contentColor = NetflixWhite,
+                    focusedContentColor = NetflixBlack
+                ),
+                shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
+                modifier = Modifier.height(38.dp)
+            ) {
+                Text(
+                    text = if (authState is AuthState.Authenticated) {
+                        stringResource(R.string.account_manage_btn)
+                    } else {
+                        stringResource(R.string.account_sign_in_btn)
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
                 )
             }
         }

@@ -54,6 +54,9 @@
     <string name="loading_secure_stream">Memuat pemutaran aman...</string>
     <string name="starting_in_seconds">Memulai dalam %d detik</string>
     <string name="connecting_to_media">Menghubungkan ke server media...</string>
+    <string name="security_verification">Verifikasi Keamanan</string>
+    <string name="security_verification_desc">Selesaikan verifikasi keamanan di bawah untuk memulai pemutaran.</string>
+    <string name="verification_failed">Verifikasi gagal (%s). Silakan coba lagi.</string>
     <string name="failed_to_play">Gagal memuat video</string>
     <string name="try_again">Coba Lagi</string>
     <string name="back">Kembali</string>
@@ -262,4 +265,36 @@
     <string name="open_offline_downloads">Buka Unduhan Offline</string>
     <string name="download_sheet_title">Unduhan Offline</string>
     <string name="download_cancel">Batalkan Unduhan</string>
+
+    <!-- Autentikasi Akun IDLIX -->
+    <string name="account">Akun</string>
+    <string name="account_header">Akun IDLIX</string>
+    <string name="account_guest_title">Mode Tamu (Maks 720p)</string>
+    <string name="account_guest_desc">Masuk dengan akun IDLIX Anda untuk membuka kualitas hingga 1080p dan batas tontonan lebih tinggi.</string>
+    <string name="account_signed_in_as">Masuk sebagai %1$s</string>
+    <string name="account_manage_btn">Kelola Akun</string>
+    <string name="account_sign_in_btn">Masuk</string>
+    <string name="account_sign_in_title">Masuk ke Akun IDLIX</string>
+    <string name="account_sign_in_subtitle">Gunakan email atau username serta password akun IDLIX Anda.</string>
+    <string name="account_identifier_label">Email atau Username</string>
+    <string name="account_password_label">Password</string>
+    <string name="account_show_password">Tampilkan Password</string>
+    <string name="account_hide_password">Sembunyikan Password</string>
+    <string name="account_signing_in">Sedang masuk...</string>
+    <string name="account_sign_in_success">Berhasil masuk sebagai %1$s</string>
+    <string name="account_sign_out">Keluar</string>
+    <string name="account_sign_out_everywhere">Keluar Semua Perangkat</string>
+    <string name="account_signed_out_success">Berhasil keluar dari akun.</string>
+    <string name="account_refresh_btn">Perbarui Status</string>
+    <string name="account_refreshed_success">Status akun diperbarui.</string>
+    <string name="account_tier_premium">IDLIX+ / Premium • 1080p</string>
+    <string name="account_tier_free">Akun Gratis • Hingga 1080p</string>
+    <string name="account_device_limit_title">Batas Sesi Masuk Tercapai</string>
+    <string name="account_device_limit_desc">Akun ini sudah memiliki %1$d sesi aktif (batas: %2$d). Lanjutkan untuk mengganti sesi terlama dan masuk di perangkat ini?</string>
+    <string name="account_device_limit_confirm">Lanjut &amp; Masuk</string>
+    <string name="account_active_sessions">Sesi Aktif</string>
+    <string name="account_load_sessions">Muat Sesi</string>
+    <string name="account_logout_others">Keluar Perangkat Lain</string>
+    <string name="account_revoke_session">Akhiri</string>
+    <string name="account_current_device">Perangkat Ini</string>
 </resources>

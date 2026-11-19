@@ -8,13 +8,19 @@ export interface ResolvedPlaybackResult {
   videoId: string;
 }
 
+export interface IsolatedFetchResult<T = any> {
+  status: number;
+  data: T;
+  setCookies: string[];
+}
+
 export class IdlixScraperEngine {
   private static instance: IdlixScraperEngine | null = null;
   private browser: any = null;
   private page: any = null;
   private isReady = false;
   private initPromise: Promise<void> | null = null;
-  private baseUrl = process.env.IDLIX_BASE_URL || 'https://z2.idlixku.com';
+  private baseUrl = process.env.IDLIX_BASE_URL || 'https://z3.idlixku.com';
 
   private constructor() {}
 
@@ -114,6 +120,95 @@ export class IdlixScraperEngine {
     return {
       isReady: this.isReady && this.page !== null && !this.page.isClosed(),
       targetUrl: this.baseUrl,
+    };
+  }
+
+  /**
+   * Executes an isolated per-request fetch outside Puppeteer's shared cookie jar so
+   * user auth cookies and Set-Cookie headers are never mixed across clients.
+   */
+  public async executeIsolatedFetch<T = any>(
+    endpoint: string,
+    options: {
+      method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+      body?: any;
+      headers?: Record<string, string>;
+      clientCookie?: string;
+    } = {}
+  ): Promise<IsolatedFetchResult<T>> {
+    await this.init();
+
+    const { method = 'GET', body, headers = {}, clientCookie } = options;
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+    let cfCookies = '';
+    let browserUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
+    try {
+      if (this.page && !this.page.isClosed()) {
+        const cookies: Array<{ name: string; value: string }> = await this.page.cookies(this.baseUrl);
+        cfCookies = cookies
+          .filter((c) => c.name === 'cf_clearance' || c.name === '__cf_bm')
+          .map((c) => `${c.name}=${c.value}`)
+          .join('; ');
+        const ua = await this.page.evaluate(() => navigator.userAgent);
+        if (typeof ua === 'string' && ua.trim()) {
+          browserUserAgent = ua;
+        }
+      }
+    } catch (_) {}
+
+    const cookieParts = [cfCookies, clientCookie].filter((v): v is string => Boolean(v && v.trim()));
+    const mergedCookie = cookieParts.join('; ');
+
+    const reqHeaders: Record<string, string> = {
+      Accept: 'application/json, text/plain, */*',
+      'User-Agent': browserUserAgent,
+      Origin: this.baseUrl,
+      Referer: `${this.baseUrl}/`,
+      ...headers,
+    };
+    if (body !== undefined) {
+      reqHeaders['Content-Type'] = 'application/json';
+    }
+    if (mergedCookie) {
+      reqHeaders['Cookie'] = mergedCookie;
+    }
+
+    const res = await fetch(url, {
+      method,
+      headers: reqHeaders,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    const text = await res.text();
+    let parsedData: any = text;
+    try {
+      parsedData = JSON.parse(text);
+    } catch (_) {}
+
+    if (
+      res.status === 403 &&
+      typeof parsedData === 'string' &&
+      (parsedData.includes('Just a moment') ||
+        parsedData.includes('cf-mitigated') ||
+        parsedData.includes('challenges.cloudflare.com'))
+    ) {
+      console.warn(`[ScraperEngine] Isolated fetch hit Cloudflare 403 for ${url}. Invalidating session.`);
+      this.isReady = false;
+      this.page = null;
+    }
+
+    const setCookies =
+      typeof (res.headers as any).getSetCookie === 'function'
+        ? ((res.headers as any).getSetCookie() as string[])
+        : [];
+
+    return {
+      status: res.status,
+      data: parsedData as T,
+      setCookies,
     };
   }
 

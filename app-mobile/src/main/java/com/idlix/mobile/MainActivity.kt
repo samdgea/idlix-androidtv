@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.idlix.data.local.PlayerAppearanceStore
 import com.idlix.data.update.AppUpdateManager
 import com.idlix.mobile.player.PipController
 import com.idlix.mobile.ui.navigation.MainScaffold
@@ -14,6 +15,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PlayerAppearanceStore.init(applicationContext)
         enableEdgeToEdge()
 
         setContent {

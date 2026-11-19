@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -341,13 +342,24 @@ fun TvSubtitleAppearanceQuickPanel(
         supportsAlpha = activePicker == ActiveColorPickerTarget.BOX,
         recentColors = recentColors,
         onColorSelected = { selected ->
-            when (activePicker) {
-                ActiveColorPickerTarget.BACKGROUND -> PlayerAppearanceStore.update { it.copy(backgroundColor = selected or 0xFF000000.toInt()) }
-                ActiveColorPickerTarget.TEXT -> PlayerAppearanceStore.update { it.copy(subtitleTextColor = selected or 0xFF000000.toInt()) }
-                ActiveColorPickerTarget.BOX -> PlayerAppearanceStore.update { it.copy(subtitleBoxColor = selected) }
-                ActiveColorPickerTarget.NONE -> {}
+            val storedColor = when (activePicker) {
+                ActiveColorPickerTarget.BACKGROUND -> {
+                    val opaque = selected or 0xFF000000.toInt()
+                    PlayerAppearanceStore.update { it.copy(backgroundColor = opaque) }
+                    opaque
+                }
+                ActiveColorPickerTarget.TEXT -> {
+                    val opaque = selected or 0xFF000000.toInt()
+                    PlayerAppearanceStore.update { it.copy(subtitleTextColor = opaque) }
+                    opaque
+                }
+                ActiveColorPickerTarget.BOX -> {
+                    PlayerAppearanceStore.update { it.copy(subtitleBoxColor = selected) }
+                    selected
+                }
+                ActiveColorPickerTarget.NONE -> selected
             }
-            PlayerAppearanceStore.addRecentCustomColor(selected)
+            PlayerAppearanceStore.addRecentCustomColor(storedColor)
             activePicker = ActiveColorPickerTarget.NONE
         },
         onDismiss = { activePicker = ActiveColorPickerTarget.NONE }
@@ -366,15 +378,16 @@ fun TvColorSwatch(
     Box(
         modifier = modifier
             .size(34.dp)
-            .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
-            .clickable(onClick = onClick)
+            .clip(CircleShape)
             .background(Color(color), CircleShape)
             .border(
                 width = if (isFocused) 2.5.dp else if (isSelected) 2.dp else 1.dp,
                 color = if (isFocused) NetflixWhite else if (isSelected) NetflixRed else Color.White.copy(alpha = 0.35f),
                 shape = CircleShape
-            ),
+            )
+            // Keep clickable as the single focus target so D-pad OK/Enter invokes onClick
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         if (isSelected) {

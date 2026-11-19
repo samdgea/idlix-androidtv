@@ -235,9 +235,9 @@ Look at this [page](https://github.com/samdgea/idlix-androidtv/releases).
 ### ⚠️ Mengalami Error HTTP 403 (Forbidden)?
 Jika Anda mengalami error **403 Forbidden** saat memuat katalog film/serial atau memutar video untuk sementara:
 1. Pastikan **Backend API Server** Anda telah diatur ke domain default IDLIX:
-   👉 **`https://z2.idlixku.com/`**
+   👉 **`https://z3.idlixku.com/`**
 2. **Cara Mengubah Alamat Backend API Server:**
-   * **Di Aplikasi (Android TV & Mobile):** Buka menu **Pengaturan (Settings)** ⚙️ > masukkan atau ubah URL pada bagian **Backend API Server** ke `https://z2.idlixku.com/`. (Pastikan forward slash diakhir alamat juga terinput)
+   * **Di Aplikasi (Android TV & Mobile):** Buka menu **Pengaturan (Settings)** ⚙️ > masukkan atau ubah URL pada bagian **Backend API Server** ke `https://z3.idlixku.com/`. (Pastikan forward slash diakhir alamat juga terinput)
    * Test menekan tombol **Test Backend Connection** [Pastikan hasilnya Backend connected! (HTTP 200, xxxms)]
 3. Setelah itu, Klik tombol **Save All Settings**
 

@@ -11,7 +11,7 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 5376,
         HOST: '0.0.0.0',
-        IDLIX_BASE_URL: 'https://z2.idlixku.com',
+        IDLIX_BASE_URL: 'https://z3.idlixku.com',
         LOG_LEVEL: 'info'
       },
     },

@@ -71,12 +71,13 @@ class QueryPreservingDataSourceFactory(
 object MediaSourceHelper {
 
     fun createHttpDataSourceFactory(tokenQuery: String): DataSource.Factory {
+        val origin = com.idlix.data.api.ApiClient.getOrigin()
         val baseHttp = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
             .setDefaultRequestProperties(
                 mapOf(
-                    "Referer" to "https://z2.idlixku.com/",
-                    "Origin" to "https://z2.idlixku.com"
+                    "Referer" to "$origin/",
+                    "Origin" to origin
                 )
             )
         return QueryPreservingDataSourceFactory(baseHttp, tokenQuery)
