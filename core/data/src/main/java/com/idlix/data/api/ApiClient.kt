@@ -252,6 +252,22 @@ object ApiClient {
 
         val response = chain.proceed(builder.build())
 
+        // Auto-migrate legacy Idlix mirror URL (e.g. z2.idlixku.com -> z3.idlixku.com) on GET redirects
+        // so subsequent POST endpoints (/api/auth/login, /api/watch/session/claim) never hit 301 POST->GET 404s.
+        val finalUrl = response.request.url
+        if (originalRequest.method.equals("GET", ignoreCase = true) &&
+            host.contains("idlix", ignoreCase = true) &&
+            finalUrl.host.contains("idlix", ignoreCase = true) &&
+            !host.equals(finalUrl.host, ignoreCase = true)
+        ) {
+            val finalDefaultPort = if (finalUrl.scheme == "https") 443 else 80
+            val finalPortSuffix = if (finalUrl.port != finalDefaultPort) ":${finalUrl.port}" else ""
+            val resolvedBase = "${finalUrl.scheme}://${finalUrl.host}$finalPortSuffix/"
+            if (!getBaseUrl().equals(resolvedBase, ignoreCase = true)) {
+                setBaseUrl(resolvedBase)
+            }
+        }
+
         // Synchronize did if server provides a new Set-Cookie: did=...
         val setCookieHeaders = response.headers("Set-Cookie")
         for (header in setCookieHeaders) {

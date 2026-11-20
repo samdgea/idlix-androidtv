@@ -197,6 +197,54 @@ class AuthContractTest {
         assertTrue(AuthSessionStore.authState.value is AuthState.Guest)
     }
 
+    @Test
+    fun testLoginAutoMigratesRedirectedMirrorOriginAndRetries() = runBlocking {
+        var currentBaseUrl = "https://z2.idlixku.com/"
+        var loginAttempts = 0
+
+        val fakeApi = object : StubAuthApiService() {
+            override suspend fun login(request: LoginRequest, fingerprint: String): Response<AuthMeResponse> {
+                loginAttempts++
+                return if (currentBaseUrl.contains("z2.idlixku.com")) {
+                    val raw = okhttp3.Response.Builder()
+                        .request(
+                            okhttp3.Request.Builder()
+                                .url("https://z3.idlixku.com/api/auth/login")
+                                .get()
+                                .build()
+                        )
+                        .protocol(okhttp3.Protocol.HTTP_1_1)
+                        .code(404)
+                        .message("Not Found")
+                        .build()
+                    Response.error(
+                        """{"error":"Not Found"}""".toResponseBody("application/json".toMediaType()),
+                        raw
+                    )
+                } else {
+                    Response.success(
+                        AuthMeResponse(
+                            user = IdlixUser(id = "u1", username = "tester", displayName = "Tester")
+                        )
+                    )
+                }
+            }
+        }
+
+        val repo = AuthRepository(
+            idlixApiProvider = { fakeApi },
+            fingerprintProvider = { "a".repeat(64) },
+            cookieJar = cookieJar,
+            baseUrlProvider = { currentBaseUrl },
+            onBaseUrlResolved = { resolved -> currentBaseUrl = resolved }
+        )
+
+        val result = repo.login("tester", "pass123")
+        assertTrue(result is AuthLoginResult.Success)
+        assertEquals(2, loginAttempts)
+        assertEquals("https://z3.idlixku.com/", currentBaseUrl)
+    }
+
     private open class StubAuthApiService : IdlixApiService {
         override suspend fun getMovies(page: Int, limit: Int, sort: String?, genre: String?): MovieListResponse =
             throw NotImplementedError()
