@@ -24,6 +24,7 @@ class AuthRepository(
     private val fingerprintProvider: () -> String = { ApiClient.getClientFingerprint() },
     private val cookieJar: PersistentCookieJar = ApiClient.cookieJar,
     private val baseUrlProvider: () -> String = { ApiClient.getBaseUrl() },
+    private val onBaseUrlResolved: (String) -> Unit = { resolved -> ApiClient.setBaseUrl(resolved) },
     private val onSessionChanged: () -> Unit = { IdlixRepository.clearPlaybackCache() }
 ) {
     private val idlixApi: IdlixApiService get() = idlixApiProvider()
@@ -72,7 +73,7 @@ class AuthRepository(
         }
 
         try {
-            val resp = idlixApi.login(
+            var resp = idlixApi.login(
                 request = LoginRequest(
                     identifier = cleanIdentifier,
                     password = password,
@@ -80,6 +81,19 @@ class AuthRepository(
                 ),
                 fingerprint = fingerprintProvider()
             )
+
+            // If a legacy mirror (e.g. z2.idlixku.com) 301-redirected POST->GET into 404 on z3.idlixku.com,
+            // update baseUrl to the resolved origin and retry the POST directly once.
+            if (resp.code() == 404 && migrateBaseUrlIfRedirected(resp.raw().request.url)) {
+                resp = idlixApi.login(
+                    request = LoginRequest(
+                        identifier = cleanIdentifier,
+                        password = password,
+                        replaceExistingSessions = if (replaceExistingSessions) true else null
+                    ),
+                    fingerprint = fingerprintProvider()
+                )
+            }
 
             if (resp.isSuccessful) {
                 val userFromLogin = resp.body()?.user
@@ -153,7 +167,11 @@ class AuthRepository(
 
     suspend fun logout(everywhere: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val resp = idlixApi.logout(LogoutRequest(scope = if (everywhere) "everywhere" else "local"))
+            val req = LogoutRequest(scope = if (everywhere) "everywhere" else "local")
+            var resp = idlixApi.logout(req)
+            if (resp.code() == 404 && migrateBaseUrlIfRedirected(resp.raw().request.url)) {
+                resp = idlixApi.logout(req)
+            }
             if (resp.isSuccessful || resp.code() == 401) {
                 clearLocalSession()
                 Result.success(Unit)
@@ -195,7 +213,11 @@ class AuthRepository(
 
     suspend fun revokeSession(sessionHandle: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val resp = idlixApi.revokeSession(RevokeSessionRequest(sessionHandle))
+            val req = RevokeSessionRequest(sessionHandle)
+            var resp = idlixApi.revokeSession(req)
+            if (resp.code() == 404 && migrateBaseUrlIfRedirected(resp.raw().request.url)) {
+                resp = idlixApi.revokeSession(req)
+            }
             if (resp.isSuccessful) Result.success(Unit)
             else {
                 val err = parseApiError(resp.errorBody()?.string())
@@ -208,7 +230,10 @@ class AuthRepository(
 
     suspend fun logoutOtherSessions(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val resp = idlixApi.logoutOtherSessions()
+            var resp = idlixApi.logoutOtherSessions()
+            if (resp.code() == 404 && migrateBaseUrlIfRedirected(resp.raw().request.url)) {
+                resp = idlixApi.logoutOtherSessions()
+            }
             if (resp.isSuccessful) Result.success(Unit)
             else {
                 val err = parseApiError(resp.errorBody()?.string())
@@ -217,6 +242,21 @@ class AuthRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun migrateBaseUrlIfRedirected(finalUrl: okhttp3.HttpUrl): Boolean {
+        val currentBase = baseUrlProvider().toHttpUrlOrNull() ?: return false
+        if (!currentBase.host.contains("idlix", ignoreCase = true) ||
+            !finalUrl.host.contains("idlix", ignoreCase = true) ||
+            currentBase.host.equals(finalUrl.host, ignoreCase = true)
+        ) {
+            return false
+        }
+        val defaultPort = if (finalUrl.scheme == "https") 443 else 80
+        val portSuffix = if (finalUrl.port != defaultPort) ":${finalUrl.port}" else ""
+        val resolvedBase = "${finalUrl.scheme}://${finalUrl.host}$portSuffix/"
+        onBaseUrlResolved(resolvedBase)
+        return true
     }
 
     fun clearLocalSession() {

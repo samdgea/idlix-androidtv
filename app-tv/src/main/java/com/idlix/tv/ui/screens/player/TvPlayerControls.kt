@@ -144,9 +144,10 @@ fun TvPlayerControls(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xD9000000),
-                            Color(0x33000000),
-                            Color(0xD9000000)
+                            Color(0xCC000000),
+                            Color(0x00000000),
+                            Color(0x26000000),
+                            Color(0xE6000000)
                         )
                     )
                 )
@@ -167,119 +168,7 @@ fun TvPlayerControls(
                 )
             }
 
-            // Center Controls: Rewind 10s, Play/Pause, Forward 10s
-            Row(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalArrangement = Arrangement.spacedBy(32.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Rewind 10s Button
-                Button(
-                    onClick = {
-                        onSeekBackward()
-                        onUserInteraction?.invoke()
-                    },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixDarkCard.copy(alpha = 0.85f),
-                        focusedContainerColor = NetflixRed,
-                        contentColor = NetflixWhite,
-                        focusedContentColor = NetflixWhite
-                    ),
-                    shape = ButtonDefaults.shape(shape = CircleShape),
-                    scale = ButtonDefaults.scale(focusedScale = 1.12f),
-                    border = ButtonDefaults.border(
-                        focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
-                    ),
-                    contentPadding = PaddingValues(0.dp),
-                    modifier = Modifier
-                        .size(56.dp)
-                        .focusProperties { down = seekBarFocusRequester }
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Replay10,
-                            contentDescription = stringResource(R.string.rewind_10s),
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-
-                // Play / Pause Button
-                Button(
-                    onClick = {
-                        onPlayPauseClick()
-                        onUserInteraction?.invoke()
-                    },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixWhite,
-                        contentColor = Color.Black,
-                        focusedContainerColor = NetflixRed,
-                        focusedContentColor = NetflixWhite
-                    ),
-                    shape = ButtonDefaults.shape(shape = CircleShape),
-                    scale = ButtonDefaults.scale(focusedScale = 1.12f),
-                    border = ButtonDefaults.border(
-                        focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
-                    ),
-                    contentPadding = PaddingValues(0.dp),
-                    modifier = playButtonModifier
-                        .size(72.dp)
-                        .focusRequester(internalPlayFocusRequester)
-                        .focusProperties { down = seekBarFocusRequester }
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier
-                                .size(36.dp)
-                                .then(if (!isPlaying) Modifier.offset(x = 2.dp) else Modifier)
-                        )
-                    }
-                }
-
-                // Forward 10s Button
-                Button(
-                    onClick = {
-                        onSeekForward()
-                        onUserInteraction?.invoke()
-                    },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixDarkCard.copy(alpha = 0.85f),
-                        focusedContainerColor = NetflixRed,
-                        contentColor = NetflixWhite,
-                        focusedContentColor = NetflixWhite
-                    ),
-                    shape = ButtonDefaults.shape(shape = CircleShape),
-                    scale = ButtonDefaults.scale(focusedScale = 1.12f),
-                    border = ButtonDefaults.border(
-                        focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
-                    ),
-                    contentPadding = PaddingValues(0.dp),
-                    modifier = Modifier
-                        .size(56.dp)
-                        .focusProperties { down = seekBarFocusRequester }
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Forward10,
-                            contentDescription = stringResource(R.string.forward_10s),
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-            }
-
-            // Bottom Bar: Interactive Seeker Bar & Subtitle toggle
+            // Bottom Bar: Interactive Seeker Bar, Playback Controls, Subtitle & Timestamp
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -299,8 +188,7 @@ fun TvPlayerControls(
                         .fillMaxWidth()
                         .focusRequester(seekBarFocusRequester)
                         .focusProperties {
-                            up = internalPlayFocusRequester
-                            down = subtitleFocusRequester
+                            down = internalPlayFocusRequester
                         }
                         .onFocusChanged { state ->
                             val wasFocused = isSeekFocused
@@ -468,25 +356,175 @@ fun TvPlayerControls(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Timing Info & Seek Mode Badge
+                    // Left Controls: Play/Pause, Rewind 10s, Forward 10s, Subtitle Picker
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Play / Pause Button
+                        Button(
+                            onClick = {
+                                onPlayPauseClick()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixWhite,
+                                contentColor = Color.Black,
+                                focusedContainerColor = NetflixRed,
+                                focusedContentColor = NetflixWhite
+                            ),
+                            shape = ButtonDefaults.shape(shape = CircleShape),
+                            scale = ButtonDefaults.scale(focusedScale = 1.12f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = playButtonModifier
+                                .size(44.dp)
+                                .focusRequester(internalPlayFocusRequester)
+                                .focusProperties { up = seekBarFocusRequester }
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .then(if (!isPlaying) Modifier.offset(x = 1.dp) else Modifier)
+                                )
+                            }
+                        }
+
+                        // Rewind 10s Button
+                        Button(
+                            onClick = {
+                                onSeekBackward()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixDarkCard.copy(alpha = 0.85f),
+                                focusedContainerColor = NetflixRed,
+                                contentColor = NetflixWhite,
+                                focusedContentColor = NetflixWhite
+                            ),
+                            shape = ButtonDefaults.shape(shape = CircleShape),
+                            scale = ButtonDefaults.scale(focusedScale = 1.12f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier
+                                .size(44.dp)
+                                .focusProperties { up = seekBarFocusRequester }
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Replay10,
+                                    contentDescription = stringResource(R.string.rewind_10s),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        // Forward 10s Button
+                        Button(
+                            onClick = {
+                                onSeekForward()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixDarkCard.copy(alpha = 0.85f),
+                                focusedContainerColor = NetflixRed,
+                                contentColor = NetflixWhite,
+                                focusedContentColor = NetflixWhite
+                            ),
+                            shape = ButtonDefaults.shape(shape = CircleShape),
+                            scale = ButtonDefaults.scale(focusedScale = 1.12f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier
+                                .size(44.dp)
+                                .focusProperties { up = seekBarFocusRequester }
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Forward10,
+                                    contentDescription = stringResource(R.string.forward_10s),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        // Subtitle Picker Button
+                        Button(
+                            onClick = {
+                                onOpenSubtitlePicker()
+                                onUserInteraction?.invoke()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (isSubtitleEnabled) NetflixRed else NetflixDarkCard,
+                                contentColor = NetflixWhite,
+                                focusedContainerColor = if (isSubtitleEnabled) Color(0xFFB81D24) else NetflixWhite,
+                                focusedContentColor = if (isSubtitleEnabled) NetflixWhite else Color.Black
+                            ),
+                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            scale = ButtonDefaults.scale(focusedScale = 1.08f),
+                            border = ButtonDefaults.border(
+                                focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(44.dp)
+                                .focusRequester(subtitleFocusRequester)
+                                .focusProperties { up = seekBarFocusRequester }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isSubtitleEnabled) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
+                                    contentDescription = stringResource(R.string.subtitles),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val displayLabel = if (!isSubtitleEnabled) {
+                                    stringResource(R.string.subtitle_off)
+                                } else {
+                                    selectedSubtitleLabel ?: stringResource(R.string.subtitle_on)
+                                }
+                                Text(
+                                    text = "Sub: $displayLabel",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Right Info: Seek Mode Badge & Timestamp
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "${formatTime(targetPos)} / ${formatTime(durationMs)}",
-                            color = if (isSeekFocused) NetflixWhite else NetflixLightGray,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSeekFocused) FontWeight.Bold else FontWeight.Medium
-                        )
-
                         if (isSeekFocused) {
                             Box(
                                 modifier = Modifier
@@ -501,51 +539,13 @@ fun TvPlayerControls(
                                 )
                             }
                         }
-                    }
 
-                    // Subtitle Picker Button
-                    Button(
-                        onClick = {
-                            onOpenSubtitlePicker()
-                            onUserInteraction?.invoke()
-                        },
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (isSubtitleEnabled) NetflixRed else NetflixDarkCard,
-                            contentColor = NetflixWhite,
-                            focusedContainerColor = if (isSubtitleEnabled) Color(0xFFB81D24) else NetflixWhite,
-                            focusedContentColor = if (isSubtitleEnabled) NetflixWhite else Color.Black
-                        ),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
-                        scale = ButtonDefaults.scale(focusedScale = 1.08f),
-                        border = ButtonDefaults.border(
-                            focusedBorder = Border(BorderStroke(2.dp, NetflixWhite))
-                        ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier
-                            .focusRequester(subtitleFocusRequester)
-                            .focusProperties { up = seekBarFocusRequester }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isSubtitleEnabled) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
-                                contentDescription = stringResource(R.string.subtitles),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val displayLabel = if (!isSubtitleEnabled) {
-                                stringResource(R.string.subtitle_off)
-                            } else {
-                                selectedSubtitleLabel ?: stringResource(R.string.subtitle_on)
-                            }
-                            Text(
-                                text = "Sub: $displayLabel",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = "${formatTime(targetPos)} / ${formatTime(durationMs)}",
+                            color = if (isSeekFocused) NetflixWhite else NetflixLightGray,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSeekFocused) FontWeight.Bold else FontWeight.Medium
+                        )
                     }
                 }
             }
