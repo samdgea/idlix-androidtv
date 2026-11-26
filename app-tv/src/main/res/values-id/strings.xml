@@ -79,7 +79,16 @@
     <string name="testing">Menguji...</string>
     <string name="reset_default_url">Reset Default URL</string>
     <string name="subdl_api_header">SubDL API Key (Third-Party Subtitle)</string>
-    <string name="subdl_api_desc">Key ini digunakan untuk mencari &amp; mendownload subtitle otomatis dari SubDL.com jika subtitle bawaan tidak ada.</string>
+    <string name="subdl_api_desc">Pilih Default SubDL bawaan atau masukkan API Key SubDL milik Anda sendiri untuk pencarian subtitle.</string>
+    <string name="subdl_mode_default">Default SubDL (Bawaan)</string>
+    <string name="subdl_mode_custom">API Key Sendiri</string>
+    <string name="subdl_active_default">Aktif: Default SubDL (Bawaan)</string>
+    <string name="subdl_active_custom">Aktif: API Key Sendiri</string>
+    <string name="subdl_default_hidden_info">API Key bawaan SubDL aktif dan disembunyikan. Anda dapat menguji koneksi atau beralih ke API Key sendiri kapan saja.</string>
+    <string name="subdl_test_connection">Uji SubDL</string>
+    <string name="show_api_key">Tampilkan</string>
+    <string name="hide_api_key">Sembunyikan</string>
+    <string name="subdl_key_empty_error">Gagal: SubDL API key tidak boleh kosong</string>
     <string name="test_subdl_key">Uji SubDL Key</string>
     <string name="reset_default_key">Reset Default Key</string>
     <string name="save_all_settings">Simpan Semua Pengaturan</string>

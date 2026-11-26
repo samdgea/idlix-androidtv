@@ -52,6 +52,39 @@ class SubdlSearchTest {
     }
 
     @Test
+    fun testSubdlConfigHidesDefaultKeyAndSupportsCustomKey() {
+        SubdlRepository.resetCacheForTesting()
+        assertTrue(SubdlRepository.isUsingDefaultApiKey())
+        assertEquals("", SubdlRepository.getCustomApiKey())
+        assertTrue(SubdlRepository.getApiKey().isNotBlank())
+
+        // Saving custom key switches away from default and stores only custom key
+        SubdlRepository.setSubdlConfig(useDefault = false, customKey = "  subdl_user_key_123  ")
+        assertEquals(false, SubdlRepository.isUsingDefaultApiKey())
+        assertEquals("subdl_user_key_123", SubdlRepository.getCustomApiKey())
+        assertEquals("subdl_user_key_123", SubdlRepository.getApiKey())
+
+        // Switching back to built-in default uses internal default key without exposing it
+        SubdlRepository.setSubdlConfig(useDefault = true, customKey = "subdl_user_key_123")
+        assertTrue(SubdlRepository.isUsingDefaultApiKey())
+        assertEquals("subdl_user_key_123", SubdlRepository.getCustomApiKey())
+        assertTrue(SubdlRepository.getApiKey() != "subdl_user_key_123")
+
+        // Attempting to use custom mode with blank key falls back safely to default
+        SubdlRepository.setSubdlConfig(useDefault = false, customKey = "   ")
+        assertTrue(SubdlRepository.isUsingDefaultApiKey())
+        assertEquals("", SubdlRepository.getCustomApiKey())
+
+        // Attempting to save the built-in default key as a custom key never exposes it
+        val internalDefault = SubdlRepository.getApiKey()
+        SubdlRepository.setSubdlConfig(useDefault = false, customKey = internalDefault)
+        assertTrue(SubdlRepository.isUsingDefaultApiKey())
+        assertEquals("", SubdlRepository.getCustomApiKey())
+
+        SubdlRepository.resetCacheForTesting()
+    }
+
+    @Test
     fun testBuildRedeemCandidateUrls() {
         val repo = com.idlix.data.repository.IdlixRepository()
         val urls1 = repo.buildRedeemCandidateUrls("/watch/session/redeem", "https://z3.idlixku.com/")

@@ -85,7 +85,15 @@
     <string name="testing">Testing...</string>
     <string name="reset_default_url">Reset Default URL</string>
     <string name="subdl_api_header">SubDL API Key (Subtitles)</string>
-    <string name="subdl_api_desc">Third-party subtitle search fallback for Indonesian &amp; English subtitles.</string>
+    <string name="subdl_api_desc">Choose built-in Default SubDL or enter your own SubDL API key for third-party subtitle search.</string>
+    <string name="subdl_mode_default">Default SubDL (Built-in)</string>
+    <string name="subdl_mode_default_desc">Use the app\'s built-in SubDL API key (hidden for security).</string>
+    <string name="subdl_mode_custom">Custom API Key</string>
+    <string name="subdl_mode_custom_desc">Enter your own personal SubDL API key.</string>
+    <string name="subdl_active_default">Active: Default SubDL (Built-in)</string>
+    <string name="subdl_active_custom">Active: Custom API Key</string>
+    <string name="subdl_test_connection">Test SubDL</string>
+    <string name="subdl_default_saved_success">Using built-in Default SubDL!</string>
     <string name="api_key_label">API Key</string>
     <string name="test_key">Test Key</string>
     <string name="save_key">Save Key</string>
