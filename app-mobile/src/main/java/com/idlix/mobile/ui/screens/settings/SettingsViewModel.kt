@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.idlix.data.api.ApiClient
 import com.idlix.data.repository.SubdlRepository
+import com.idlix.data.repository.SubdlTestResult
 import com.idlix.mobile.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,8 +16,9 @@ import kotlinx.coroutines.withContext
 
 data class SettingsUiState(
     val activeBackendUrl: String = "",
-    val activeSubdlKey: String = "",
+    val activeUseDefaultSubdl: Boolean = true,
     val backendUrl: String = "",
+    val useDefaultSubdl: Boolean = true,
     val subdlKey: String = "",
     val activeDnsProvider: String = ApiClient.DEFAULT_DNS_PROVIDER,
     val selectedDnsProvider: String = ApiClient.DEFAULT_DNS_PROVIDER,
@@ -24,6 +26,7 @@ data class SettingsUiState(
     val backendTestResult: String? = null,
     val isTestingSubdl: Boolean = false,
     val subdlTestResult: String? = null,
+    val isSubdlTestSuccess: Boolean? = null,
     val isTestingDns: Boolean = false,
     val dnsTestResult: String? = null,
     val cacheCleared: Boolean = false
@@ -36,9 +39,10 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow(
         SettingsUiState(
             activeBackendUrl = ApiClient.getBaseUrl(),
-            activeSubdlKey = SubdlRepository.getApiKey(),
+            activeUseDefaultSubdl = SubdlRepository.isUsingDefaultApiKey(),
             backendUrl = ApiClient.getBaseUrl(),
-            subdlKey = SubdlRepository.getApiKey(),
+            useDefaultSubdl = SubdlRepository.isUsingDefaultApiKey(),
+            subdlKey = SubdlRepository.getCustomApiKey(),
             activeDnsProvider = ApiClient.getDnsProvider(),
             selectedDnsProvider = ApiClient.getDnsProvider()
         )
@@ -49,8 +53,20 @@ class SettingsViewModel(
         _uiState.value = _uiState.value.copy(backendUrl = url, backendTestResult = null)
     }
 
+    fun selectSubdlMode(useDefault: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            useDefaultSubdl = useDefault,
+            subdlTestResult = null,
+            isSubdlTestSuccess = null
+        )
+    }
+
     fun updateSubdlKey(key: String) {
-        _uiState.value = _uiState.value.copy(subdlKey = key, subdlTestResult = null)
+        _uiState.value = _uiState.value.copy(
+            subdlKey = key,
+            subdlTestResult = null,
+            isSubdlTestSuccess = null
+        )
     }
 
     fun resetBackendUrl() {
@@ -59,8 +75,11 @@ class SettingsViewModel(
     }
 
     fun resetSubdlKey() {
-        val defaultKey = SubdlRepository.DEFAULT_API_KEY
-        _uiState.value = _uiState.value.copy(subdlKey = defaultKey, subdlTestResult = null)
+        _uiState.value = _uiState.value.copy(
+            useDefaultSubdl = true,
+            subdlTestResult = null,
+            isSubdlTestSuccess = null
+        )
     }
 
     fun saveBackendUrl() {
@@ -81,13 +100,27 @@ class SettingsViewModel(
 
     fun saveSubdlKey() {
         val app = getApplication<Application>()
+        val useDefault = _uiState.value.useDefaultSubdl
         val targetKey = _uiState.value.subdlKey.trim()
-        SubdlRepository.setApiKey(targetKey)
-        val newActive = SubdlRepository.getApiKey()
+        if (!useDefault && targetKey.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                subdlTestResult = app.getString(R.string.subdl_key_empty_error),
+                isSubdlTestSuccess = false
+            )
+            return
+        }
+        SubdlRepository.setSubdlConfig(useDefault = useDefault, customKey = targetKey)
+        val activeUseDefault = SubdlRepository.isUsingDefaultApiKey()
         _uiState.value = _uiState.value.copy(
-            activeSubdlKey = newActive,
-            subdlKey = newActive,
-            subdlTestResult = app.getString(R.string.subdl_key_saved_success)
+            activeUseDefaultSubdl = activeUseDefault,
+            useDefaultSubdl = activeUseDefault,
+            subdlKey = SubdlRepository.getCustomApiKey(),
+            subdlTestResult = if (activeUseDefault) {
+                app.getString(R.string.subdl_default_saved_success)
+            } else {
+                app.getString(R.string.subdl_key_saved_success)
+            },
+            isSubdlTestSuccess = true
         )
     }
 
@@ -124,24 +157,43 @@ class SettingsViewModel(
 
     fun testSubdl() {
         val app = getApplication<Application>()
+        val useDefault = _uiState.value.useDefaultSubdl
         val targetKey = _uiState.value.subdlKey.trim()
-        if (targetKey.isBlank()) {
+        if (!useDefault && targetKey.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 isTestingSubdl = false,
-                subdlTestResult = app.getString(R.string.subdl_key_empty_error)
+                subdlTestResult = app.getString(R.string.subdl_key_empty_error),
+                isSubdlTestSuccess = false
             )
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isTestingSubdl = true, subdlTestResult = null)
-            val result = SubdlRepository.testApiKey(targetKey)
+            _uiState.value = _uiState.value.copy(
+                isTestingSubdl = true,
+                subdlTestResult = null,
+                isSubdlTestSuccess = null
+            )
+            val result = SubdlRepository.testSubdlConnection(
+                useDefault = useDefault,
+                customKey = targetKey
+            )
+            val mapped = when (result) {
+                is SubdlTestResult.Success ->
+                    Pair(true, app.getString(R.string.subdl_valid))
+                is SubdlTestResult.QuotaOrInvalidResponse ->
+                    Pair(false, app.getString(R.string.subdl_quota_error))
+                is SubdlTestResult.HttpError ->
+                    Pair(false, app.getString(R.string.subdl_invalid_http, result.code))
+                is SubdlTestResult.EmptyKey ->
+                    Pair(false, app.getString(R.string.subdl_key_empty_error))
+                is SubdlTestResult.NetworkError ->
+                    Pair(false, app.getString(R.string.subdl_failed_error, result.message ?: "Unknown network error"))
+            }
             _uiState.value = _uiState.value.copy(
                 isTestingSubdl = false,
-                subdlTestResult = result.fold(
-                    onSuccess = { it },
-                    onFailure = { "Failed: ${it.localizedMessage ?: "Unknown network error"}" }
-                )
+                subdlTestResult = mapped.second,
+                isSubdlTestSuccess = mapped.first
             )
         }
     }

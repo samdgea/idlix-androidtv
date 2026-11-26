@@ -79,7 +79,16 @@
     <string name="testing">Testing...</string>
     <string name="reset_default_url">Reset Default URL</string>
     <string name="subdl_api_header">SubDL API Key (Third-Party Subtitle)</string>
-    <string name="subdl_api_desc">This key is used to search and download subtitles automatically from SubDL.com when default subtitles are unavailable.</string>
+    <string name="subdl_api_desc">Choose built-in Default SubDL or enter your own SubDL API key for third-party subtitle search.</string>
+    <string name="subdl_mode_default">Default SubDL (Built-in)</string>
+    <string name="subdl_mode_custom">Custom API Key</string>
+    <string name="subdl_active_default">Active: Default SubDL (Built-in)</string>
+    <string name="subdl_active_custom">Active: Custom API Key</string>
+    <string name="subdl_default_hidden_info">Built-in SubDL API key is active and hidden. You can test the connection or switch to your own key anytime.</string>
+    <string name="subdl_test_connection">Test SubDL</string>
+    <string name="show_api_key">Show</string>
+    <string name="hide_api_key">Hide</string>
+    <string name="subdl_key_empty_error">Failed: SubDL API key cannot be empty</string>
     <string name="test_subdl_key">Test SubDL Key</string>
     <string name="reset_default_key">Reset Default Key</string>
     <string name="save_all_settings">Save All Settings</string>

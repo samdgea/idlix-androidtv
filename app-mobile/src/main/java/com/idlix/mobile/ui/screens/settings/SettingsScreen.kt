@@ -320,40 +320,97 @@ fun SettingsScreen(
                         color = TextMuted,
                         fontSize = 12.sp
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (uiState.activeUseDefaultSubdl) {
+                            stringResource(R.string.subdl_active_default)
+                        } else {
+                            stringResource(R.string.subdl_active_custom)
+                        },
+                        color = if (uiState.activeUseDefaultSubdl) Color(0xFF4CAF50) else TextDim,
+                        fontSize = 11.sp
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = uiState.subdlKey,
-                        onValueChange = { viewModel.updateSubdlKey(it) },
-                        label = { Text(stringResource(R.string.api_key_label), color = TextDim) },
-                        singleLine = true,
-                        visualTransformation = if (isSubdlKeyVisible) VisualTransformation.None else PasswordVisualTransformation('*'),
-                        trailingIcon = {
-                            IconButton(onClick = { isSubdlKeyVisible = !isSubdlKeyVisible }) {
-                                Icon(
-                                    imageVector = if (isSubdlKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (isSubdlKeyVisible) stringResource(R.string.hide_api_key) else stringResource(R.string.show_api_key),
-                                    tint = TextDim
+                    val subdlOptions = listOf(
+                        Triple(true, stringResource(R.string.subdl_mode_default), stringResource(R.string.subdl_mode_default_desc)),
+                        Triple(false, stringResource(R.string.subdl_mode_custom), stringResource(R.string.subdl_mode_custom_desc))
+                    )
+
+                    subdlOptions.forEach { (isDefaultOption, title, desc) ->
+                        val selected = uiState.useDefaultSubdl == isDefaultOption
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.selectSubdlMode(isDefaultOption) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = { viewModel.selectSubdlMode(isDefaultOption) },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = IdlixRed,
+                                    unselectedColor = TextDim
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = title,
+                                    color = if (selected) TextWhite else TextMuted,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = desc,
+                                    color = TextDim,
+                                    fontSize = 11.sp
                                 )
                             }
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = SurfaceVariantDark,
-                            unfocusedContainerColor = SurfaceVariantDark,
-                            focusedBorderColor = IdlixRed,
-                            unfocusedBorderColor = SurfaceVariantDark,
-                            focusedTextColor = TextWhite,
-                            unfocusedTextColor = TextWhite
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        }
+                    }
+
+                    if (!uiState.useDefaultSubdl) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = uiState.subdlKey,
+                            onValueChange = { viewModel.updateSubdlKey(it) },
+                            label = { Text(stringResource(R.string.api_key_label), color = TextDim) },
+                            placeholder = { Text("subdl__your_api_key_here", color = TextDim) },
+                            singleLine = true,
+                            visualTransformation = if (isSubdlKeyVisible) VisualTransformation.None else PasswordVisualTransformation('*'),
+                            trailingIcon = {
+                                IconButton(onClick = { isSubdlKeyVisible = !isSubdlKeyVisible }) {
+                                    Icon(
+                                        imageVector = if (isSubdlKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (isSubdlKeyVisible) stringResource(R.string.hide_api_key) else stringResource(R.string.show_api_key),
+                                        tint = TextDim
+                                    )
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = SurfaceVariantDark,
+                                unfocusedContainerColor = SurfaceVariantDark,
+                                focusedBorderColor = IdlixRed,
+                                unfocusedBorderColor = SurfaceVariantDark,
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
 
                     if (uiState.subdlTestResult != null) {
                         Spacer(modifier = Modifier.height(8.dp))
+                        val isSuccess = uiState.isSubdlTestSuccess
+                            ?: (uiState.subdlTestResult!!.contains("valid", ignoreCase = true) ||
+                                uiState.subdlTestResult!!.contains("success", ignoreCase = true))
                         Text(
                             text = uiState.subdlTestResult ?: "",
-                            color = if (uiState.subdlTestResult!!.contains("valid", ignoreCase = true) || uiState.subdlTestResult!!.contains("success", ignoreCase = true)) Color(0xFF4CAF50) else IdlixRed,
+                            color = if (isSuccess) Color(0xFF4CAF50) else IdlixRed,
                             fontSize = 12.sp
                         )
                     }
@@ -374,7 +431,15 @@ fun SettingsScreen(
                             if (uiState.isTestingSubdl) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), color = IdlixRed)
                             } else {
-                                Text(stringResource(R.string.test_key), color = TextWhite, maxLines = 1)
+                                Text(
+                                    text = if (uiState.useDefaultSubdl) {
+                                        stringResource(R.string.subdl_test_connection)
+                                    } else {
+                                        stringResource(R.string.test_key)
+                                    },
+                                    color = TextWhite,
+                                    maxLines = 1
+                                )
                             }
                         }
 
@@ -384,24 +449,15 @@ fun SettingsScreen(
                             modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         ) {
-                            Text(stringResource(R.string.save_key), maxLines = 1)
+                            Text(
+                                text = if (uiState.useDefaultSubdl) {
+                                    stringResource(R.string.save)
+                                } else {
+                                    stringResource(R.string.save_key)
+                                },
+                                maxLines = 1
+                            )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    TextButton(
-                        onClick = { viewModel.resetSubdlKey() },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = TextDim
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.reset_to_default), color = TextDim, fontSize = 12.sp)
                     }
                 }
             }

@@ -19,43 +19,98 @@ import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.util.zip.ZipInputStream
 
+sealed class SubdlTestResult {
+    data class Success(val subtitleCount: Int) : SubdlTestResult()
+    data object QuotaOrInvalidResponse : SubdlTestResult()
+    data class HttpError(val code: Int) : SubdlTestResult()
+    data object EmptyKey : SubdlTestResult()
+    data class NetworkError(val message: String?) : SubdlTestResult()
+}
+
 object SubdlRepository {
     private const val TAG = "SubdlRepository"
     private const val PREF_KEY_SUBDL_API_KEY = "custom_subdl_api_key"
-    const val DEFAULT_API_KEY = "subdl__VuGBV3ExlH8tW68l4wVEIsk6Mfnaxq1_FiONFN8Yg0"
+    private const val PREF_KEY_SUBDL_USE_DEFAULT = "use_default_subdl_api_key"
+    private const val DEFAULT_API_KEY = "subdl__VuGBV3ExlH8tW68l4wVEIsk6Mfnaxq1_FiONFN8Yg0"
     private const val BASE_URL = "https://api.subdl.com/api/v1/subtitles"
 
     @Volatile
-    private var currentApiKey: String? = null
+    private var cachedUseDefault: Boolean? = null
 
-    fun getApiKey(): String {
-        currentApiKey?.let { return it }
-        val saved = try {
-            val prefs = ApiClient.applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
-            prefs?.getString(PREF_KEY_SUBDL_API_KEY, null)
-        } catch (_: Exception) {
-            null
-        }
-        val key = if (!saved.isNullOrBlank()) saved else DEFAULT_API_KEY
-        currentApiKey = key
-        return key
+    @Volatile
+    private var cachedCustomApiKey: String? = null
+
+    private fun getPrefs() = try {
+        ApiClient.applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
+    } catch (_: Exception) {
+        null
     }
 
-    fun setApiKey(newKey: String) {
-        val trimmed = newKey.trim()
-        currentApiKey = trimmed
+    private fun sanitizeCustomKey(raw: String?): String {
+        val trimmed = raw?.trim().orEmpty()
+        return if (trimmed.isBlank() || trimmed == DEFAULT_API_KEY) "" else trimmed
+    }
+
+    fun getCustomApiKey(): String {
+        cachedCustomApiKey?.let { return it }
+        val saved = sanitizeCustomKey(getPrefs()?.getString(PREF_KEY_SUBDL_API_KEY, null))
+        cachedCustomApiKey = saved
+        return saved
+    }
+
+    fun isUsingDefaultApiKey(): Boolean {
+        cachedUseDefault?.let { return it }
+        val prefs = getPrefs()
+        val customKey = getCustomApiKey()
+        val useDefault = if (prefs != null && prefs.contains(PREF_KEY_SUBDL_USE_DEFAULT)) {
+            prefs.getBoolean(PREF_KEY_SUBDL_USE_DEFAULT, true) || customKey.isBlank()
+        } else {
+            customKey.isBlank()
+        }
+        cachedUseDefault = useDefault
+        return useDefault
+    }
+
+    internal fun getApiKey(): String {
+        if (isUsingDefaultApiKey()) return DEFAULT_API_KEY
+        return getCustomApiKey().ifBlank { DEFAULT_API_KEY }
+    }
+
+    fun setSubdlConfig(useDefault: Boolean, customKey: String = getCustomApiKey()) {
+        val sanitizedCustom = sanitizeCustomKey(customKey)
+        val effectiveUseDefault = useDefault || sanitizedCustom.isBlank()
+        cachedUseDefault = effectiveUseDefault
+        cachedCustomApiKey = sanitizedCustom
         try {
-            val prefs = ApiClient.applicationContext?.getSharedPreferences("idlix_config", Context.MODE_PRIVATE)
-            prefs?.edit()?.putString(PREF_KEY_SUBDL_API_KEY, trimmed)?.apply()
+            getPrefs()?.edit()
+                ?.putBoolean(PREF_KEY_SUBDL_USE_DEFAULT, effectiveUseDefault)
+                ?.putString(PREF_KEY_SUBDL_API_KEY, sanitizedCustom)
+                ?.apply()
         } catch (_: Exception) {}
     }
 
-    suspend fun testApiKey(targetKey: String): Result<String> = withContext(Dispatchers.IO) {
-        val trimmed = targetKey.trim()
-        if (trimmed.isBlank()) {
-            return@withContext Result.failure(IllegalArgumentException("SubDL API key cannot be empty"))
+    fun setApiKey(newKey: String) {
+        val sanitizedCustom = sanitizeCustomKey(newKey)
+        setSubdlConfig(
+            useDefault = sanitizedCustom.isBlank(),
+            customKey = sanitizedCustom
+        )
+    }
+
+    internal fun resetCacheForTesting() {
+        cachedUseDefault = null
+        cachedCustomApiKey = null
+    }
+
+    suspend fun testSubdlConnection(
+        useDefault: Boolean,
+        customKey: String = ""
+    ): SubdlTestResult = withContext(Dispatchers.IO) {
+        val targetKey = if (useDefault) DEFAULT_API_KEY else customKey.trim()
+        if (targetKey.isBlank()) {
+            return@withContext SubdlTestResult.EmptyKey
         }
-        val testEndpoint = "$BASE_URL?api_key=$trimmed&film_name=Avatar"
+        val testEndpoint = "$BASE_URL?api_key=$targetKey&film_name=Avatar"
         try {
             val req = Request.Builder()
                 .url(testEndpoint)
@@ -70,16 +125,31 @@ object SubdlRepository {
                     } catch (_: Exception) { null }
 
                     if (parsed?.status == true) {
-                        Result.success("SubDL API key is valid (${parsed.subtitles.size} subtitles found)")
+                        SubdlTestResult.Success(parsed.subtitles.size)
                     } else {
-                        Result.failure(Exception("Invalid response or quota exceeded"))
+                        SubdlTestResult.QuotaOrInvalidResponse
                     }
                 } else {
-                    Result.failure(Exception("HTTP error: ${resp.code}"))
+                    SubdlTestResult.HttpError(resp.code)
                 }
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            SubdlTestResult.NetworkError(e.localizedMessage)
+        }
+    }
+
+    suspend fun testApiKey(targetKey: String): Result<String> {
+        return when (val result = testSubdlConnection(useDefault = false, customKey = targetKey)) {
+            is SubdlTestResult.Success ->
+                Result.success("SubDL API key is valid (${result.subtitleCount} subtitles found)")
+            is SubdlTestResult.EmptyKey ->
+                Result.failure(IllegalArgumentException("SubDL API key cannot be empty"))
+            is SubdlTestResult.QuotaOrInvalidResponse ->
+                Result.failure(Exception("Invalid response or quota exceeded"))
+            is SubdlTestResult.HttpError ->
+                Result.failure(Exception("HTTP error: ${result.code}"))
+            is SubdlTestResult.NetworkError ->
+                Result.failure(Exception(result.message ?: "Unknown network error"))
         }
     }
 
